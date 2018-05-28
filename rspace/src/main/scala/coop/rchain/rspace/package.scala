@@ -1,5 +1,6 @@
 package coop.rchain
 
+import cats.Id
 import cats.implicits._
 import com.typesafe.scalalogging.Logger
 import coop.rchain.catscontrib._
@@ -99,7 +100,7 @@ package object rspace {
     * @tparam A A type representing a piece of data
     * @tparam K A type representing a continuation
     */
-  def consume[C, P, A, K](store: IStore[C, P, A, K],
+  def consume[C, P, A, K](store: IStore[Id, C, P, A, K],
                           channels: Seq[C],
                           patterns: Seq[P],
                           continuation: K,
@@ -154,7 +155,7 @@ package object rspace {
     }
   }
 
-  def install[C, P, A, K](store: IStore[C, P, A, K],
+  def install[C, P, A, K](store: IStore[Id, C, P, A, K],
                           channels: Seq[C],
                           patterns: Seq[P],
                           continuation: K)(implicit m: Match[P, A]): Option[(K, Seq[A])] = {
@@ -256,7 +257,7 @@ package object rspace {
     * @tparam A A type representing a piece of data
     * @tparam K A type representing a continuation
     */
-  def produce[C, P, A, K](store: IStore[C, P, A, K], channel: C, data: A, persist: Boolean)(
+  def produce[C, P, A, K](store: IStore[Id, C, P, A, K], channel: C, data: A, persist: Boolean)(
       implicit m: Match[P, A]): Option[(K, Seq[A])] =
     store.withTxn(store.createTxnWrite()) { txn =>
       val groupedChannels: Seq[Seq[C]] = store.getJoin(txn, channel)

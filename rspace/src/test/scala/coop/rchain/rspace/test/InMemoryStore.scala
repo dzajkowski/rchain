@@ -2,6 +2,9 @@ package coop.rchain.rspace.test
 
 import java.nio.charset.StandardCharsets
 
+import coop.rchain.catscontrib._, Catscontrib._
+import cats.Id
+import coop.rchain.catscontrib.Capture
 import coop.rchain.crypto.hash.Blake2b256
 import coop.rchain.rspace.examples._
 import coop.rchain.rspace.history.{Blake2b256Hash, Trie}
@@ -13,13 +16,13 @@ import javax.xml.bind.DatatypeConverter.printHexBinary
 import scala.collection.immutable.Seq
 import scala.collection.mutable
 
-class InMemoryStore[C, P, A, K <: Serializable] private (
+class InMemoryStore[F[_]: Capture, C, P, A, K <: Serializable] private (
     _keys: mutable.HashMap[String, Seq[C]],
     _waitingContinuations: mutable.HashMap[String, Seq[WaitingContinuation[P, K]]],
     _data: mutable.HashMap[String, Seq[Datum[A]]],
     _joinMap: mutable.MultiMap[C, String],
 )(implicit sc: Serialize[C])
-    extends IStore[C, P, A, K]
+    extends IStore[F, C, P, A, K]
     with ITestableStore[C, P] {
 
   private[rspace] type H = String
@@ -155,8 +158,10 @@ class InMemoryStore[C, P, A, K <: Serializable] private (
     _joinMap.clear()
   }
 
-  def getStoreSize: StoreSize =
-    StoreSize(0, (_keys.size + _waitingContinuations.size + _data.size + _joinMap.size).toLong)
+  def getStoreSize: F[StoreSize] =
+    Capture[F].capture {
+      StoreSize(0, (_keys.size + _waitingContinuations.size + _data.size + _joinMap.size).toLong)
+    }
 
   def isEmpty: Boolean =
     _waitingContinuations.isEmpty && _data.isEmpty && _keys.isEmpty && _joinMap.isEmpty
@@ -184,8 +189,8 @@ object InMemoryStore {
   def hashString(s: String): Array[Byte] =
     hashBytes(s.getBytes(StandardCharsets.UTF_8))
 
-  def create[C, P, A, K <: Serializable](implicit sc: Serialize[C]): InMemoryStore[C, P, A, K] =
-    new InMemoryStore[C, P, A, K](
+  def create[C, P, A, K <: Serializable](implicit sc: Serialize[C]): InMemoryStore[Id, C, P, A, K] =
+    new InMemoryStore[Id, C, P, A, K](
       _keys = mutable.HashMap.empty[String, Seq[C]],
       _waitingContinuations = mutable.HashMap.empty[String, Seq[WaitingContinuation[P, K]]],
       _data = mutable.HashMap.empty[String, Seq[Datum[A]]],

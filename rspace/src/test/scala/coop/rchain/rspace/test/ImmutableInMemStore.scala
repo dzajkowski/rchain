@@ -1,5 +1,9 @@
 package coop.rchain.rspace.test
 
+import coop.rchain.catscontrib._
+import Catscontrib._
+import cats.Id
+import coop.rchain.catscontrib.Capture
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.test.ImmutableInMemStore.RichSyncVar
 import coop.rchain.rspace.util.dropIndex
@@ -8,15 +12,16 @@ import javax.xml.bind.DatatypeConverter.printHexBinary
 
 import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
+import scala.language.higherKinds
 import scala.util.control.NonFatal
 
-class ImmutableInMemStore[C, P, A, K <: Serializable] private (
+class ImmutableInMemStore[F[_]: Capture, C, P, A, K <: Serializable] private (
     _keys: Map[String, Seq[C]],
     _waitingContinuations: Map[String, Seq[WaitingContinuation[P, K]]],
     _data: Map[String, Seq[Datum[A]]],
     _joinMap: Map[C, Set[String]],
 )(implicit sc: Serialize[C], sk: Serialize[K])
-    extends IStore[C, P, A, K]
+    extends IStore[F, C, P, A, K]
     with ITestableStore[C, P] {
 
   private[this] val keysRef = new SyncVar[Map[String, Seq[C]]].init(_keys)
@@ -174,12 +179,14 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
     joinRef.replace(Map.empty[C, Set[String]])
   }
 
-  def getStoreSize: StoreSize =
-    StoreSize(0,
-              (keysRef.get.size +
-                waitingContinuationsRef.get.size +
-                dataRef.get.size +
-                joinRef.get.size).toLong)
+  def getStoreSize: F[StoreSize] =
+    Capture[F].capture {
+      StoreSize(0,
+                (keysRef.get.size +
+                  waitingContinuationsRef.get.size +
+                  dataRef.get.size +
+                  joinRef.get.size).toLong)
+    }
 
   def isEmpty: Boolean =
     waitingContinuationsRef.get.isEmpty && dataRef.get.isEmpty && keysRef.get.isEmpty && joinRef.get.isEmpty
@@ -205,8 +212,8 @@ object ImmutableInMemStore {
     }
 
   def create[C, P, A, K <: Serializable](implicit sc: Serialize[C],
-                                         sk: Serialize[K]): ImmutableInMemStore[C, P, A, K] =
-    new ImmutableInMemStore[C, P, A, K](
+                                         sk: Serialize[K]): ImmutableInMemStore[Id, C, P, A, K] =
+    new ImmutableInMemStore[Id, C, P, A, K](
       _keys = Map.empty[String, Seq[C]],
       _waitingContinuations = Map.empty[String, Seq[WaitingContinuation[P, K]]],
       _data = Map.empty[String, Seq[Datum[A]]],

@@ -3,6 +3,8 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.{Files, Path}
 
+import coop.rchain.catscontrib._, Catscontrib._
+import cats.Id
 import coop.rchain.crypto.hash.Blake2b256
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.internal.scodecs._
@@ -14,23 +16,24 @@ import scodec.bits._
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.Seq
+import scala.language.higherKinds
 
 /**
   * The main store class.
   *
   * To create an instance, use [[LMDBStore.create]].
   */
-class LMDBStore[C, P, A, K] private (env: Env[ByteBuffer],
-                                     databasePath: Path,
-                                     _dbKeys: Dbi[ByteBuffer],
-                                     _dbWaitingContinuations: Dbi[ByteBuffer],
-                                     _dbData: Dbi[ByteBuffer],
-                                     _dbJoins: Dbi[ByteBuffer])(implicit
-                                                                sc: Serialize[C],
-                                                                sp: Serialize[P],
-                                                                sa: Serialize[A],
-                                                                sk: Serialize[K])
-    extends IStore[C, P, A, K]
+class LMDBStore[F[_]: Capture, C, P, A, K] private (env: Env[ByteBuffer],
+                                                    databasePath: Path,
+                                                    _dbKeys: Dbi[ByteBuffer],
+                                                    _dbWaitingContinuations: Dbi[ByteBuffer],
+                                                    _dbData: Dbi[ByteBuffer],
+                                                    _dbJoins: Dbi[ByteBuffer])(implicit
+                                                                               sc: Serialize[C],
+                                                                               sp: Serialize[P],
+                                                                               sa: Serialize[A],
+                                                                               sk: Serialize[K])
+    extends IStore[F, C, P, A, K]
     with ITestableStore[C, P] {
 
   private implicit val codecC: Codec[C] = sc.toCodec
@@ -268,7 +271,7 @@ class LMDBStore[C, P, A, K] private (env: Env[ByteBuffer],
     env.close()
   }
 
-  def getStoreSize: StoreSize = {
+  def getStoreSize: F[StoreSize] = Capture[F].capture {
     val sizeOnDisk = Files
       .walk(databasePath)
       .mapToLong(p => {
@@ -326,7 +329,7 @@ object LMDBStore {
   def create[C, P, A, K](path: Path, mapSize: Long)(implicit sc: Serialize[C],
                                                     sp: Serialize[P],
                                                     sa: Serialize[A],
-                                                    sk: Serialize[K]): LMDBStore[C, P, A, K] = {
+                                                    sk: Serialize[K]): LMDBStore[Id, C, P, A, K] = {
 
     val env: Env[ByteBuffer] =
       Env
@@ -342,10 +345,7 @@ object LMDBStore {
     val dbData: Dbi[ByteBuffer]  = env.openDbi(dataTableName, MDB_CREATE)
     val dbJoins: Dbi[ByteBuffer] = env.openDbi(joinsTableName, MDB_CREATE)
 
-    new LMDBStore[C, P, A, K](env, path, dbKeys, dbWaitingContinuations, dbData, dbJoins)(sc,
-                                                                                          sp,
-                                                                                          sa,
-                                                                                          sk)
+    new LMDBStore[Id, C, P, A, K](env, path, dbKeys, dbWaitingContinuations, dbData, dbJoins)
   }
 
   private[rspace] def toByteVector[T](value: T)(implicit st: Serialize[T]): ByteVector =

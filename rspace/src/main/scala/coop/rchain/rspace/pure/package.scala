@@ -1,10 +1,12 @@
 package coop.rchain.rspace
 
+import cats.Id
 import coop.rchain.catscontrib.Capture
 
 import scala.collection.immutable._
+import coop.rchain.rspace.{consume => fconsume, install => finstall, produce => fproduce}
 
-import coop.rchain.rspace.{produce => fproduce, consume => fconsume, install => finstall}
+import scala.language.higherKinds
 
 /**
   * Monad wrapper for [[coop.rchain.rspace]] package object (produce/consume/install)
@@ -44,7 +46,7 @@ package object pure {
     * @return
     */
   def consume[F[_], C, P, A, K](
-      store: IStore[C, P, A, K],
+      store: IStore[Id, C, P, A, K],
       channels: Seq[C],
       patterns: Seq[P],
       continuation: K,
@@ -82,10 +84,12 @@ package object pure {
     * @tparam A A type representing a piece of data
     * @tparam K A type representing a continuation
     */
-  def produce[F[_], C, P, A, K](store: IStore[C, P, A, K], channel: C, data: A, persist: Boolean)(
-      implicit
-      m: Match[P, A],
-      c: Capture[F]): F[Option[(K, Seq[A])]] =
+  def produce[F[_], C, P, A, K](store: IStore[Id, C, P, A, K],
+                                channel: C,
+                                data: A,
+                                persist: Boolean)(implicit
+                                                  m: Match[P, A],
+                                                  c: Capture[F]): F[Option[(K, Seq[A])]] =
     c.capture(fproduce(store, channel, data, persist))
 
   /** Searches the store for data matching all the given patterns at the given channels.
@@ -120,7 +124,7 @@ package object pure {
     * @tparam K A type representing a continuation
     */
   def install[F[_], C, P, A, K](
-      store: IStore[C, P, A, K],
+      store: IStore[Id, C, P, A, K],
       channels: Seq[C],
       patterns: Seq[P],
       continuation: K)(implicit m: Match[P, A], c: Capture[F]): F[Option[(K, Seq[A])]] =

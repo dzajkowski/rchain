@@ -2,15 +2,17 @@ package coop.rchain.rspace
 
 import java.nio.file.{Files, Path}
 
+import cats.Id
 import com.typesafe.scalalogging.Logger
 import coop.rchain.rspace.examples.StringExamples._
 import coop.rchain.rspace.examples.StringExamples.implicits._
 import coop.rchain.rspace.test._
 import org.scalatest._
+import coop.rchain.catscontrib._, Catscontrib._
 
 trait StorageTestsBase[C, P, A, K] extends FlatSpec with Matchers with OptionValues {
 
-  type T = IStore[C, P, A, K] with ITestableStore[C, P]
+  type T = IStore[Id, C, P, A, K] with ITestableStore[C, P]
 
   val logger: Logger = Logger(this.getClass.getName.stripSuffix("$"))
 

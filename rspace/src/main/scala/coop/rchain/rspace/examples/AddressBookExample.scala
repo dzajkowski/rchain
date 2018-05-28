@@ -3,6 +3,7 @@ package coop.rchain.rspace.examples
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 import java.nio.file.{Files, Path}
 
+import cats.Id
 import cats.implicits._
 import coop.rchain.rspace._
 import coop.rchain.rspace.extended._
@@ -166,7 +167,7 @@ object AddressBookExample {
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
     // Let's define our store
-    val store: LMDBStore[Channel, Pattern, Entry, Printer] =
+    val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
       LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
 
     Console.printf("\nExample One: Let's consume and then produce...\n")
@@ -199,7 +200,7 @@ object AddressBookExample {
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
     // Let's define our store
-    val store: LMDBStore[Channel, Pattern, Entry, Printer] =
+    val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
       LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
 
     Console.printf("\nExample Two: Let's produce and then consume...\n")

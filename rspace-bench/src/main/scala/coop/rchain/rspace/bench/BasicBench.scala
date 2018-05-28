@@ -41,7 +41,7 @@ object BasicBench {
 
     private val dbDir: Path = Files.createTempDirectory("rchain-storage-test-")
 
-    val testStore: LMDBStore[String, Pattern, String, StringsCaptor] =
+    val testStore: LMDBStore[Id, String, Pattern, String, StringsCaptor] =
       LMDBStore.create[String, Pattern, String, StringsCaptor](dbDir, 1024 * 1024 * 1024)
   }
 }

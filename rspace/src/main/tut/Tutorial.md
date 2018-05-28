@@ -227,7 +227,7 @@ val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
 Next we create an instance of `LMDBStore` using `storePath`.  We will create our store with a maximum map size of 100MB.
 ```tut
-val store: LMDBStore[Channel, Pattern, Entry, Printer] = LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L * 100L)
+val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] = LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L * 100L)
 ```
 
 ### Producing and Consuming

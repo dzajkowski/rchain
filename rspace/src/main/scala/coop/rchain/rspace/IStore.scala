@@ -3,6 +3,7 @@ package coop.rchain.rspace
 import coop.rchain.rspace.internal._
 
 import scala.collection.immutable.Seq
+import scala.language.higherKinds
 
 /** The interface for the underlying store
   *
@@ -11,7 +12,7 @@ import scala.collection.immutable.Seq
   * @tparam A a type representing an arbitrary piece of data
   * @tparam K a type representing a continuation
   */
-trait IStore[C, P, A, K] {
+trait IStore[F[_], C, P, A, K] {
 
   /**
     * The type of hashes
@@ -70,5 +71,5 @@ trait IStore[C, P, A, K] {
 
   def close(): Unit
 
-  def getStoreSize: StoreSize
+  def getStoreSize: F[StoreSize]
 }
