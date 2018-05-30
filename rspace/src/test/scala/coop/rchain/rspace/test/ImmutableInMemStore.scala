@@ -42,14 +42,34 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
     }
   }
 
-  val state: Transaction[State] =
-    new LockingTransaction[State](State(_keys, _waitingContinuations, _data, _joinMap))
+  class Store[DATA](state: DATA) {
+    val stateRef: SyncVar[DATA] = new SyncVar[DATA]().init(state)
+
+    val currentWrite = None
+
+    def newWrite
+  }
+
+  val store = new Store[State](State(_keys, _waitingContinuations, _data, _joinMap))
+
+//  val state: Transaction[State] =
+//    new LockingTransaction[State](State(_keys, _waitingContinuations, _data, _joinMap))
 
   private[rspace] type H = String
 
   private[rspace] type T = Transaction[State]
 
   private[rspace] def withTxn[R](txn: T)(f: T => R): R = f(txn)
+
+//  {
+//    var result: Option[R] = None
+//    txn.write(state => {
+//      val value = new ReentrantTransaction[State](state)
+//      result = Option(f(value))
+//      value._state
+//    })
+//    result.get
+//  }
 
   trait Transaction[DATA] {
     def read: DATA
@@ -266,9 +286,11 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
   private[rspace] def hashChannels(cs: Seq[C])(implicit sc: Serialize[C]): H =
     printHexBinary(InMemoryStore.hashBytes(cs.flatMap(sc.encode).toArray))
 
-  private[rspace] def createTxnRead(): T = state
+  private[rspace] def createTxnRead(): T =
+    state
 
-  private[rspace] def createTxnWrite(): T = state
+  private[rspace] def createTxnWrite(): T =
+    state
 
   private[rspace] def collectGarbage(txn: T,
                                      channelsHash: H,
@@ -298,7 +320,6 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
 }
 
 object ImmutableInMemStore {
-  val DEFAULT_TIMEOUT_MS: Long = 100
 
   def roundTrip[K: Serialize](k: K): K =
     Serialize[K].decode(Serialize[K].encode(k)) match {
@@ -316,28 +337,10 @@ object ImmutableInMemStore {
     )
 
   implicit class RichSyncVar[R](ref: SyncVar[R]) {
-
-    def update(f: R => R): SyncVar[R] = {
-      val prev = ref.take(DEFAULT_TIMEOUT_MS)
-      try {
-        val next = f(prev)
-        ref.put(next)
-      } catch {
-        // simulate rollback
-        case ex: Throwable =>
-          ref.put(prev)
-          throw ex
-      }
-      ref
-    }
-
     def init(r: R): SyncVar[R] = {
       ref.put(r)
       ref
     }
-
-    def replace(r: R): SyncVar[R] =
-      update(_ => r)
   }
 
 }
