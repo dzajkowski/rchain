@@ -10,6 +10,82 @@ import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
 import scala.util.control.NonFatal
 
+case class State[C, P, A, K: Serialize](
+    keys: Map[String, Seq[C]],
+    continuations: Map[String, Seq[WaitingContinuation[P, K]]],
+    data: Map[String, Seq[Datum[A]]],
+    joins: Map[C, Set[String]]
+) {}
+
+object State {
+  def apply[C, P, A, K: Serialize](
+      keys: Map[String, Seq[C]],
+      continuations: Map[String, Seq[WaitingContinuation[P, K]]],
+      data: Map[String, Seq[Datum[A]]],
+      joins: Map[C, Set[String]]
+  ): State[C, P, A, K] = {
+    // defensive copy of potentially mutable data
+    val copy = continuations.map {
+      case (k, cs) =>
+        k -> cs.map(wk => wk.copy(continuation = ImmutableInMemStore.roundTrip(wk.continuation)))
+    }
+    new State(keys, copy, data, joins)
+  }
+}
+
+class Store[DATA](state: DATA) {
+  private[this] val stateRef: SyncVar[DATA] = new SyncVar[DATA]().init(state)
+
+  def readTxn: Transaction[DATA] =
+    new Transaction[DATA] {
+      override def read: DATA = stateRef.get(LockingTransaction.DEFAULT_TIMEOUT_MS).get
+
+      override def write(f: DATA => DATA): Unit =
+        throw new RuntimeException("read transaction cannot write to state")
+
+      override def start: Unit  = {}
+      override def commit: Unit = {}
+      override def abort: Unit  = {}
+    }
+
+  def writeTxn: Transaction[DATA] =
+    new Transaction[DATA] {
+      private val init = stateRef.take(LockingTransaction.DEFAULT_TIMEOUT_MS)
+      private var curr = init
+
+      override def read: DATA = state
+
+      override def write(f: DATA => DATA): Unit = {
+        val result = f(curr)
+        println("write result", result)
+        curr = result
+      }
+
+      override def start: Unit =
+        println("start txn")
+
+      override def commit: Unit = {
+        stateRef.put(curr)
+        println("commit txn ", curr)
+      }
+
+      override def abort: Unit =
+        stateRef.put(init)
+    }
+}
+
+trait Transaction[DATA] {
+  def read: DATA
+  def write(f: DATA => DATA): Unit
+  def start: Unit
+  def commit: Unit
+  def abort: Unit
+}
+
+object LockingTransaction {
+  val DEFAULT_TIMEOUT_MS: Long = 100
+}
+
 class ImmutableInMemStore[C, P, A, K <: Serializable] private (
     _keys: Map[String, Seq[C]],
     _waitingContinuations: Map[String, Seq[WaitingContinuation[P, K]]],
@@ -18,102 +94,23 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
 )(implicit sc: Serialize[C], sk: Serialize[K])
     extends IStore[C, P, A, K]
     with ITestableStore[C, P] {
-
-  case class State(
-      keys: Map[String, Seq[C]],
-      continuations: Map[String, Seq[WaitingContinuation[P, K]]],
-      data: Map[String, Seq[Datum[A]]],
-      joins: Map[C, Set[String]]
-  ) {}
-
-  object State {
-    def apply(
-        keys: Map[String, Seq[C]],
-        continuations: Map[String, Seq[WaitingContinuation[P, K]]],
-        data: Map[String, Seq[Datum[A]]],
-        joins: Map[C, Set[String]]
-    ): State = {
-      // defensive copy of potentially mutable data
-      val copy = continuations.map {
-        case (k, cs) =>
-          k -> cs.map(wk => wk.copy(continuation = ImmutableInMemStore.roundTrip(wk.continuation)))
-      }
-      new State(keys, copy, data, joins)
-    }
-  }
-
-  class Store[DATA](state: DATA) {
-    val stateRef: SyncVar[DATA] = new SyncVar[DATA]().init(state)
-
-    val currentWrite = None
-
-    def newWrite
-  }
-
-  val store = new Store[State](State(_keys, _waitingContinuations, _data, _joinMap))
-
-//  val state: Transaction[State] =
-//    new LockingTransaction[State](State(_keys, _waitingContinuations, _data, _joinMap))
+  val store = new Store[State[C, P, A, K]](State(_keys, _waitingContinuations, _data, _joinMap))
 
   private[rspace] type H = String
 
-  private[rspace] type T = Transaction[State]
+  private[rspace] type T = Transaction[State[C, P, A, K]]
 
-  private[rspace] def withTxn[R](txn: T)(f: T => R): R = f(txn)
-
-//  {
-//    var result: Option[R] = None
-//    txn.write(state => {
-//      val value = new ReentrantTransaction[State](state)
-//      result = Option(f(value))
-//      value._state
-//    })
-//    result.get
-//  }
-
-  trait Transaction[DATA] {
-    def read: DATA
-    def write(f: DATA => DATA): Unit
-  }
-
-  object LockingTransaction {
-    val DEFAULT_TIMEOUT_MS: Long = 100
-  }
-
-  class LockingTransaction[DATA](state: DATA) extends Transaction[DATA] {
-    val stateRef: SyncVar[DATA] = new SyncVar[DATA]().init(state)
-
-    def read: DATA = stateRef.get(LockingTransaction.DEFAULT_TIMEOUT_MS).get
-
-    def write(f: DATA => DATA): Unit = {
-      val prev = stateRef.take(LockingTransaction.DEFAULT_TIMEOUT_MS)
-      try {
-        val next = f(prev)
-        stateRef.put(next)
-      } catch {
-        case ex: Throwable =>
-          stateRef.put(prev)
-          throw ex
-      }
+  private[rspace] def withTxn[R](txn: T)(f: T => R): R =
+    try {
+      txn.start
+      val r = f(txn)
+      txn.commit
+      r
+    } catch {
+      case ex: Throwable =>
+        txn.abort
+        throw ex
     }
-  }
-
-  private[this] class ReentrantTransaction[DATA](state: DATA) extends Transaction[DATA] {
-    var _state: DATA = state
-
-    def read: DATA = state
-
-    def write(f: DATA => DATA): Unit = {
-      val prev = _state
-      try {
-        _state = f(prev)
-      } catch {
-        case ex: Throwable =>
-          _state = prev
-          throw ex
-      }
-    }
-  }
 
   private[this] def putCs(txn: T, channels: Seq[C]): Unit =
     txn.write(
@@ -123,35 +120,26 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
   private[rspace] def getChannels(txn: T, s: H): Seq[C] =
     txn.read.keys.getOrElse(s, Seq.empty[C])
 
-  private[rspace] def putDatum(txn: T, channels: Seq[C], datum: Datum[A]): Unit =
-    txn.write {
-      case state @ State(keys, waitingContinuations, data, joins) =>
-        val key          = hashChannels(channels)
-        val reentrantTxn = new ReentrantTransaction(state)
-        putCs(reentrantTxn, channels)
-        val datums = data.getOrElse(key, Seq.empty[Datum[A]])
-        State(reentrantTxn._state.keys,
-              waitingContinuations,
-              data + (key -> (datum +: datums)),
-              joins)
+  private[rspace] def putDatum(txn: T, channels: Seq[C], datum: Datum[A]): Unit = {
+    val key = hashChannels(channels)
+    putCs(txn, channels)
+    txn.write { state =>
+      val datums = state.data.getOrElse(key, Seq.empty[Datum[A]])
+      state.copy(data = state.data + (key -> (datum +: datums)))
     }
+  }
 
   private[rspace] def putWaitingContinuation(txn: T,
                                              channels: Seq[C],
-                                             continuation: WaitingContinuation[P, K]): Unit =
-    txn.write {
-      case state @ State(keys, waitingContinuations, data, joins) =>
-        val key          = hashChannels(channels)
-        val reentrantTxn = new ReentrantTransaction(state)
-        putCs(reentrantTxn, channels)
-        val forKey: Seq[WaitingContinuation[P, K]] =
-          waitingContinuations.getOrElse(key, Seq.empty[WaitingContinuation[P, K]])
-
-        State(reentrantTxn._state.keys,
-              waitingContinuations + (key -> (continuation +: forKey)),
-              data,
-              joins)
+                                             continuation: WaitingContinuation[P, K]): Unit = {
+    val key = hashChannels(channels)
+    putCs(txn, channels)
+    txn.write { state =>
+      val forKey: Seq[WaitingContinuation[P, K]] =
+        state.continuations.getOrElse(key, Seq.empty[WaitingContinuation[P, K]])
+      state.copy(continuations = state.continuations + (key -> (continuation +: forKey)))
     }
+  }
 
   private[rspace] def getData(txn: T, channels: Seq[C]): Seq[Datum[A]] =
     txn.read.data.getOrElse(hashChannels(channels), Seq.empty[Datum[A]])
@@ -287,10 +275,10 @@ class ImmutableInMemStore[C, P, A, K <: Serializable] private (
     printHexBinary(InMemoryStore.hashBytes(cs.flatMap(sc.encode).toArray))
 
   private[rspace] def createTxnRead(): T =
-    state
+    store.readTxn
 
   private[rspace] def createTxnWrite(): T =
-    state
+    store.writeTxn
 
   private[rspace] def collectGarbage(txn: T,
                                      channelsHash: H,
