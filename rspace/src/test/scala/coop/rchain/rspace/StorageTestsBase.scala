@@ -56,7 +56,6 @@ class LMDBStoreTestsBase
       testStore.clear(txn)
       testStore.trieStore.clear(txn)
     }
-    history.initialize(testStore.trieStore)
     try {
       f(testStore)
     } finally {
