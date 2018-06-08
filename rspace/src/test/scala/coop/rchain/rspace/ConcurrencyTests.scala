@@ -15,7 +15,7 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
   def version: String
 
   "CORE-589 produce and consume in a multithreaded fashion" should
-    "show high performance" in withTestStore { store =>
+    "show high performance" in withTestSpace { space =>
     val arrResults      = new Array[Long](Runtime.getRuntime.availableProcessors)
     val iterationsCount = 500
 
@@ -25,8 +25,7 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
         val start   = System.nanoTime()
 
         for (_ <- 1 to iterations) {
-          val r1 = consume(
-            store,
+          val r1 = space.consume(
             List(channel, channel),
             List(CityMatch(city = "Crystal Lake"), CityMatch(city = "Crystal Lake")),
             new EntriesCaptor,
@@ -35,11 +34,11 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
 
           r1 shouldBe None
 
-          val r2 = produce(store, channel, bob, persist = false)
+          val r2 = space.produce(channel, bob, persist = false)
 
           r2 shouldBe None
 
-          val r3 = produce(store, channel, bob, persist = false)
+          val r3 = space.produce(channel, bob, persist = false)
 
           r3 shouldBe defined
 
@@ -87,7 +86,7 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
     val max = nsToMs(arrResults.max)
     val avg = arrResults.map(x => nsToMs(x) * (1.0 / arrResults.length)).sum
 
-    val counter = store.getStoreCounters
+    val counter = space.store.getStoreCounters
 
     println(s"Finished $version: $iterationsCount iterations.")
     println(
@@ -100,7 +99,7 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
         s"${min.formatted("%.2f")} ms; max: ${max.formatted("%.2f")} ms")
   }
 
-  "produce and consume with monix.Tasks" should "work" in withTestStore { store =>
+  "produce and consume with monix.Tasks" should "work" in withTestSpace { space =>
     val tasksCount      = Runtime.getRuntime.availableProcessors
     val iterationsCount = 500
 
@@ -110,16 +109,15 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
         val start   = System.nanoTime()
 
         for (_ <- 1 to iterations) {
-          val r1 = produce(store, channel, bob, persist = false)
+          val r1 = space.produce(channel, bob, persist = false)
 
           r1 shouldBe None
 
-          val r2 = produce(store, channel, bob, persist = false)
+          val r2 = space.produce(channel, bob, persist = false)
 
           r2 shouldBe None
 
-          val r3 = consume(
-            store,
+          val r3 = space.consume(
             List(channel, channel),
             List(CityMatch(city = "Crystal Lake"), CityMatch(city = "Crystal Lake")),
             new EntriesCaptor,
@@ -151,7 +149,7 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
     val max   = nsToMs(times.max)
     val avg   = times.map(x => nsToMs(x) * (1.0 / times.length)).sum
 
-    val counter = store.getStoreCounters
+    val counter = space.store.getStoreCounters
 
     println(s"Finished $version: $iterationsCount iterations.")
     println(
@@ -173,12 +171,11 @@ trait ConcurrencyTests extends StorageTestsBase[Channel, Pattern, Entry, Entries
                   phone = "698-555-1212")
 }
 
-// TODO: uncomment this when we will have concurrent InMemoryStore
-//class InMemoryStoreConcurrencyTests
-//    extends InMemoryStoreStorageExamplesTestsBase
-//    with ConcurrencyTests {
-//  override def version: String = "InMemory"
-//}
+class InMemoryStoreConcurrencyTests
+    extends InMemoryStoreStorageExamplesTestsBase
+    with ConcurrencyTests {
+  override def version: String = "InMemory"
+}
 
 class LMDBStoreConcurrencyTestsWithTls
     extends LMDBStoreStorageExamplesTestBase
