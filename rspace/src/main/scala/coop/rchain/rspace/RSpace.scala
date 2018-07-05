@@ -2,6 +2,7 @@ package coop.rchain.rspace
 
 import java.nio.ByteBuffer
 
+import cats.Id
 import cats.implicits._
 import com.typesafe.scalalogging.Logger
 import coop.rchain.catscontrib._
@@ -17,7 +18,7 @@ import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
 import scala.util.Random
 
-class RSpace[C, P, A, R, K](val store: IStore[C, P, A, K], val branch: Branch)(
+class RSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branch)(
     implicit
     serializeC: Serialize[C],
     serializeP: Serialize[P],
@@ -259,7 +260,7 @@ object RSpace {
 
     history.initialize(context.trieStore, branch)
 
-    val mainStore = LMDBStore.create[C, P, A, K](context, branch)
+    val mainStore = LMDBStore.create[Id, C, P, A, K](context, branch)
 
     new RSpace[C, P, A, R, K](mainStore, branch)
   }

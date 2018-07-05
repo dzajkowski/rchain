@@ -2,6 +2,7 @@ package coop.rchain.rspace.test
 
 import java.nio.ByteBuffer
 
+import cats.Id
 import cats.implicits._
 import coop.rchain.rspace._
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, Leaf}
@@ -49,7 +50,7 @@ class InMemoryStore[C, P, A, K](
     val trieStore: ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
     val trieBranch: Branch
 )(implicit sc: Serialize[C], sp: Serialize[P], sa: Serialize[A], sk: Serialize[K])
-    extends IStore[C, P, A, K] {
+    extends IStore[Id, C, P, A, K] {
 
   private implicit val codecK: Codec[K] = sk.toCodec
   private implicit val codecC: Codec[C] = sc.toCodec

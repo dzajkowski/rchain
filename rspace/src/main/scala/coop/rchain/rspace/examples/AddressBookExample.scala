@@ -3,11 +3,12 @@ package coop.rchain.rspace.examples
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 import java.nio.file.{Files, Path}
 
-import cats.implicits._
+import cats.Id
 import coop.rchain.rspace._
 import coop.rchain.rspace.history.Branch
 import coop.rchain.shared.Language.ignore
 import coop.rchain.rspace.util.runKs
+import coop.rchain.catscontrib._
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.Seq
@@ -168,8 +169,8 @@ object AddressBookExample {
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
     // Let's define our store
-    val store: LMDBStore[Channel, Pattern, Entry, Printer] =
-      LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
+      LMDBStore.create[Id, Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
 
     val space = new RSpace[Channel, Pattern, Entry, Entry, Printer](store, Branch.MASTER)
 
@@ -202,8 +203,8 @@ object AddressBookExample {
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
     // Let's define our store
-    val store: LMDBStore[Channel, Pattern, Entry, Printer] =
-      LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
+      LMDBStore.create[Id, Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
 
     val space = new RSpace[Channel, Pattern, Entry, Entry, Printer](store, Branch.MASTER)
 
@@ -281,7 +282,7 @@ object AddressBookExample {
     // Here we define a temporary place to put the store's files
     val storePath = Files.createTempDirectory("rspace-address-book-example-")
     // Let's define our store
-    val store = LMDBStore.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val store = LMDBStore.create[Id, Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
 
     f(new RSpace[Channel, Pattern, Entry, Entry, Printer](store, Branch.MASTER))
   }

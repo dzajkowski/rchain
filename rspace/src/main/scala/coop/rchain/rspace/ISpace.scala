@@ -1,5 +1,6 @@
 package coop.rchain.rspace
 
+import cats.Id
 import cats.implicits._
 import coop.rchain.rspace.history.{Branch, Leaf}
 import coop.rchain.catscontrib._
@@ -7,6 +8,7 @@ import coop.rchain.rspace.internal._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Seq
+import scala.language.higherKinds
 
 /** The interface for RSpace
   *
@@ -21,7 +23,7 @@ trait ISpace[C, P, A, R, K] {
   /**
     * A store which statisfies the [[IStore]] interface.
     */
-  val store: IStore[C, P, A, K]
+  val store: IStore[Id, C, P, A, K]
 
   val branch: Branch
 

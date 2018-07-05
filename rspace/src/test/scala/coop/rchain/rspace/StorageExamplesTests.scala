@@ -3,12 +3,14 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.{Files, Path}
 
+import cats.Id
 import coop.rchain.rspace.examples.AddressBookExample._
 import coop.rchain.rspace.examples.AddressBookExample.implicits._
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, LMDBTrieStore}
 import coop.rchain.rspace.internal.GNAT
 import coop.rchain.rspace.internal.codecGNAT
 import coop.rchain.rspace.util._
+import coop.rchain.catscontrib._
 import coop.rchain.rspace.test.InMemoryStore
 import org.lmdbjava.{Env, EnvFlags, Txn}
 import org.scalatest.BeforeAndAfterAll
@@ -340,7 +342,8 @@ class LMDBStoreStorageExamplesTestBase
   def noTls: Boolean = false
 
   override def withTestSpace[R](f: T => R): R = {
-    val testStore = LMDBStore.create[Channel, Pattern, Entry, EntriesCaptor](dbDir, mapSize, noTls)
+    val testStore =
+      LMDBStore.create[Id, Channel, Pattern, Entry, EntriesCaptor](dbDir, mapSize, noTls)
     val testSpace =
       new RSpace[Channel, Pattern, Entry, Entry, EntriesCaptor](testStore, Branch.MASTER)
     try {

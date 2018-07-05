@@ -16,7 +16,7 @@ import scala.concurrent.SyncVar
   * @tparam A a type representing an arbitrary piece of data
   * @tparam K a type representing a continuation
   */
-trait IStore[C, P, A, K] {
+trait IStore[F[_], C, P, A, K] {
 
   /**
     * The type of transactions
@@ -25,9 +25,9 @@ trait IStore[C, P, A, K] {
 
   private[rspace] type TT // trie transaction
 
-  private[rspace] def createTxnRead(): T
+  private[rspace] def createTxnRead(): F[T]
 
-  private[rspace] def createTxnWrite(): T
+  private[rspace] def createTxnWrite(): F[T]
 
   private[rspace] def withTxn[R](txn: T)(f: T => R): R
 
@@ -60,9 +60,9 @@ trait IStore[C, P, A, K] {
 
   private[rspace] def removeJoin(txn: T, channel: C, channels: Seq[C]): Unit
 
-  private[rspace] def joinMap: Map[Blake2b256Hash, Seq[Seq[C]]]
+  private[rspace] def joinMap: F[Map[Blake2b256Hash, Seq[Seq[C]]]]
 
-  def toMap: Map[Seq[C], Row[P, A, K]]
+  def toMap: F[Map[Seq[C], Row[P, A, K]]]
 
   private[rspace] def close(): Unit
 
@@ -125,5 +125,5 @@ trait IStore[C, P, A, K] {
 
   private[rspace] def clear(txn: T): Unit
 
-  def isEmpty: Boolean
+  def isEmpty: F[Boolean]
 }

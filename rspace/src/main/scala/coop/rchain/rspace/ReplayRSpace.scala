@@ -1,5 +1,6 @@
 package coop.rchain.rspace
 
+import cats.Id
 import cats.implicits._
 import com.google.common.collect.Multiset
 import com.typesafe.scalalogging.Logger
@@ -17,7 +18,7 @@ import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
 import scala.util.Random
 
-class ReplayRSpace[C, P, A, R, K](val store: IStore[C, P, A, K], val branch: Branch)(
+class ReplayRSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branch)(
     implicit
     serializeC: Serialize[C],
     serializeP: Serialize[P],
@@ -315,7 +316,7 @@ object ReplayRSpace {
 
     history.initialize(context.trieStore, branch)
 
-    val mainStore = LMDBStore.create[C, P, A, K](context, branch)
+    val mainStore = LMDBStore.create[Id, C, P, A, K](context, branch)
 
     new ReplayRSpace[C, P, A, R, K](mainStore, branch)
   }

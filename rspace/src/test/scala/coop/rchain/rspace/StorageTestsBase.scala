@@ -3,12 +3,14 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.{Files, Path}
 
+import cats.Id
 import com.typesafe.scalalogging.Logger
 import coop.rchain.rspace.examples.StringExamples._
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.examples.StringExamples.implicits._
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, LMDBTrieStore}
 import coop.rchain.rspace.test._
+import coop.rchain.catscontrib._
 import org.lmdbjava.{Env, EnvFlags, Txn}
 import org.scalatest._
 import scodec.Codec
@@ -89,7 +91,7 @@ class LMDBStoreTestsBase
     val env = Context.create[String, Pattern, String, StringsCaptor](dbDir,
                                                                      mapSize,
                                                                      List(EnvFlags.MDB_NOTLS))
-    val testStore = LMDBStore.create[String, Pattern, String, StringsCaptor](env, testBranch)
+    val testStore = LMDBStore.create[Id, String, Pattern, String, StringsCaptor](env, testBranch)
     val testSpace =
       new RSpace[String, Pattern, String, String, StringsCaptor](testStore, testBranch)
     testStore.withTxn(testStore.createTxnWrite()) { txn =>

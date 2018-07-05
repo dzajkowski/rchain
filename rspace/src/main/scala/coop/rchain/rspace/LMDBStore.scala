@@ -3,6 +3,9 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.Path
 
+import cats.Monad
+import cats._, cats.data._, cats.implicits._
+import coop.rchain.catscontrib.Capture
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, Leaf}
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.util.canonicalize
@@ -19,12 +22,14 @@ import scodec.bits._
 import scala.collection.JavaConverters._
 import scala.collection.immutable.Seq
 
+import scala.language.higherKinds
+
 /**
   * The main store class.
   *
   * To create an instance, use [[LMDBStore.create]].
   */
-class LMDBStore[C, P, A, K] private (
+class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
     env: Env[ByteBuffer],
     databasePath: Path,
     _dbGNATs: Dbi[ByteBuffer],
@@ -36,7 +41,7 @@ class LMDBStore[C, P, A, K] private (
   codecP: Codec[P],
   codecA: Codec[A],
   codecK: Codec[K])
-    extends IStore[C, P, A, K] {
+    extends IStore[F, C, P, A, K] {
 
   // Good luck trying to get this to resolve as an implicit
   val joinCodec: Codec[Seq[Seq[C]]] = codecSeq(codecSeq(codecC))
@@ -48,9 +53,11 @@ class LMDBStore[C, P, A, K] private (
 
   val eventsCounter: StoreEventsCounter = new StoreEventsCounter()
 
-  private[rspace] def createTxnRead(): T = env.txnRead
+  private[rspace] def createTxnRead(): F[T] =
+    Capture[F].capture { env.txnRead }
 
-  private[rspace] def createTxnWrite(): T = env.txnWrite
+  private[rspace] def createTxnWrite(): F[T] =
+    Capture[F].capture { env.txnWrite }
 
   private[rspace] def withTxn[R](txn: T)(f: T => R): R =
     try {
@@ -239,16 +246,25 @@ class LMDBStore[C, P, A, K] private (
     }
   }
 
-  private[rspace] def joinMap: Map[Blake2b256Hash, Seq[Seq[C]]] =
-    withTxn(createTxnRead()) { txn =>
-      withResource(_dbJoins.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
-        it.asScala
-          .foldLeft(Map.empty[Blake2b256Hash, Seq[Seq[C]]]) {
-            (acc: Map[Blake2b256Hash, Seq[Seq[C]]], x: CursorIterator.KeyVal[ByteBuffer]) =>
-              val hash     = Codec[Blake2b256Hash].decode(BitVector(x.key())).map(_.value).get
-              val channels = joinCodec.decode(BitVector(x.`val`())).map(_.value).get
-              acc.updated(hash, channels)
-          }
+  def withTxnF[R](t: F[T])(f: T => F[R]): F[R] =
+    t >>= ((_t: T) => {
+      withTxn(_t) { txn =>
+        f(txn)
+      }
+    })
+
+  private[rspace] def joinMap: F[Map[Blake2b256Hash, Seq[Seq[C]]]] =
+    withTxnF(createTxnRead()) { txn =>
+      Capture[F].capture {
+        withResource(_dbJoins.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
+          it.asScala
+            .foldLeft(Map.empty[Blake2b256Hash, Seq[Seq[C]]]) {
+              (acc: Map[Blake2b256Hash, Seq[Seq[C]]], x: CursorIterator.KeyVal[ByteBuffer]) =>
+                val hash     = Codec[Blake2b256Hash].decode(BitVector(x.key())).map(_.value).get
+                val channels = joinCodec.decode(BitVector(x.`val`())).map(_.value).get
+                acc.updated(hash, channels)
+            }
+        }
       }
     }
 
@@ -266,23 +282,27 @@ class LMDBStore[C, P, A, K] private (
   def getStoreCounters: StoreCounters =
     eventsCounter.createCounters(databasePath.folderSize, env.stat().entries)
 
-  def isEmpty: Boolean =
-    withTxn(createTxnRead()) { txn =>
-      !_dbGNATs.iterate(txn).hasNext &&
-      !_dbJoins.iterate(txn).hasNext
+  def isEmpty: F[Boolean] =
+    withTxnF(createTxnRead()) { txn =>
+      Capture[F].capture {
+        !_dbGNATs.iterate(txn).hasNext &&
+        !_dbJoins.iterate(txn).hasNext
+      }
     }
 
   def getPatterns(txn: T, channels: Seq[C]): Seq[Seq[P]] =
     getWaitingContinuation(txn, channels).map(_.patterns)
 
-  def toMap: Map[Seq[C], Row[P, A, K]] =
-    withTxn(createTxnRead()) { txn =>
-      withResource(_dbGNATs.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
-        it.asScala.map { (x: CursorIterator.KeyVal[ByteBuffer]) =>
-          val row  = x.`val`()
-          val gnat = Codec[GNAT[C, P, A, K]].decode(BitVector(row)).map(_.value).get
-          (gnat.channels, Row(gnat.data, gnat.wks))
-        }.toMap
+  def toMap: F[Map[Seq[C], Row[P, A, K]]] =
+    withTxnF(createTxnRead()) { txn =>
+      Capture[F].capture {
+        withResource(_dbGNATs.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
+          it.asScala.map { (x: CursorIterator.KeyVal[ByteBuffer]) =>
+            val row  = x.`val`()
+            val gnat = Codec[GNAT[C, P, A, K]].decode(BitVector(row)).map(_.value).get
+            (gnat.channels, Row(gnat.data, gnat.wks))
+          }.toMap
+        }
       }
     }
 
@@ -311,12 +331,12 @@ class LMDBStore[C, P, A, K] private (
 
 object LMDBStore {
 
-  def create[C, P, A, K](context: Context[C, P, A, K], branch: Branch)(
+  def create[F[_]: Capture: Monad, C, P, A, K](context: Context[C, P, A, K], branch: Branch)(
       implicit
       sc: Serialize[C],
       sp: Serialize[P],
       sa: Serialize[A],
-      sk: Serialize[K]): LMDBStore[C, P, A, K] = {
+      sk: Serialize[K]): LMDBStore[F, C, P, A, K] = {
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec
     implicit val codecA: Codec[A] = sa.toCodec
@@ -325,19 +345,19 @@ object LMDBStore {
     val dbGnats: Dbi[ByteBuffer] = context.env.openDbi(s"${branch.name}-gnats", MDB_CREATE)
     val dbJoins: Dbi[ByteBuffer] = context.env.openDbi(s"${branch.name}-joins", MDB_CREATE)
 
-    new LMDBStore[C, P, A, K](context.env,
-                              context.path,
-                              dbGnats,
-                              dbJoins,
-                              context.trieStore,
-                              branch)
+    new LMDBStore[F, C, P, A, K](context.env,
+                                 context.path,
+                                 dbGnats,
+                                 dbJoins,
+                                 context.trieStore,
+                                 branch)
   }
 
-  def create[C, P, A, K](path: Path, mapSize: Long, noTls: Boolean = true)(
+  def create[F[_]: Capture: Monad, C, P, A, K](path: Path, mapSize: Long, noTls: Boolean = true)(
       implicit sc: Serialize[C],
       sp: Serialize[P],
       sa: Serialize[A],
-      sk: Serialize[K]): LMDBStore[C, P, A, K] = {
+      sk: Serialize[K]): LMDBStore[F, C, P, A, K] = {
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec
     implicit val codecA: Codec[A] = sa.toCodec
