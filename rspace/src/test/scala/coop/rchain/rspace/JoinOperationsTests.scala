@@ -7,7 +7,7 @@ import coop.rchain.rspace.internal._
 trait JoinOperationsTests extends StorageTestsBase[String, Pattern, String, StringsCaptor] {
 
   "joins" should "remove joins if no PsK" in withTestSpace { space =>
-    space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
       space.store.putDatum(txn, List("ch1"), Datum.create("ch1", "datum1", persist = false))
       space.store.putDatum(txn, List("ch2"), Datum.create("ch2", "datum2", persist = false))
       space.store.addJoin(txn, "ch1", List("ch1", "ch2"))
@@ -18,17 +18,17 @@ trait JoinOperationsTests extends StorageTestsBase[String, Pattern, String, Stri
       space.store.addJoin(txn, "ch2", List("ch1", "ch2"))
     }
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getJoin(txn, "ch1") shouldBe List(List("ch1", "ch2"))
       space.store.getJoin(txn, "ch2") shouldBe List(List("ch1", "ch2"))
     }
 
-    space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
       space.store.removeJoin(txn, "ch1", List("ch1", "ch2"))
       space.store.removeJoin(txn, "ch2", List("ch1", "ch2"))
     }
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getJoin(txn, "ch1") shouldBe List.empty[List[String]]
       space.store.getJoin(txn, "ch2") shouldBe List.empty[List[String]]
     }
@@ -37,7 +37,7 @@ trait JoinOperationsTests extends StorageTestsBase[String, Pattern, String, Stri
 
     //now ensure that garbage-collection works and all joins
     //are removed when we remove As
-    space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
       space.store.removeDatum(txn, List("ch1"), 0)
       space.store.removeDatum(txn, List("ch2"), 0)
     }

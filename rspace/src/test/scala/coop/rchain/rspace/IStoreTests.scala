@@ -22,7 +22,7 @@ trait IStoreTests
       val key   = List(channel)
       val datum = Datum.create(channel, datumValue, false)
 
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.putDatum(txn, key, datum)
         space.store.getData(txn, key) should contain theSameElementsAs (Seq(datum))
         space.store.clear(txn)
@@ -36,7 +36,7 @@ trait IStoreTests
       val datum1 = Datum.create(channel, datumValue, false)
       val datum2 = Datum.create(channel, datumValue + "2", false)
 
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.putDatum(txn, key, datum1)
         space.store.putDatum(txn, key, datum2)
         space.store.getData(txn, key) should contain theSameElementsAs (Seq(datum1, datum2))
@@ -63,7 +63,7 @@ trait IStoreTests
           Datum.create(channel, datumValue + i, false)
         }
 
-        space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+        space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
           data.foreach { d =>
             space.store.putDatum(txn, key, d)
           }
@@ -79,7 +79,7 @@ trait IStoreTests
     forAll("channel", "datum") { (channel: String, datum: String) =>
       val key  = List(channel)
       val hash = space.store.hashChannels(key)
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.putDatum(txn, key, Datum.create(channel, datum, persist = false))
         // collectGarbage is called in removeDatum:
         space.store.removeDatum(txn, key, 0)
@@ -98,7 +98,7 @@ trait IStoreTests
         val wc: WaitingContinuation[Pattern, StringsCaptor] =
           WaitingContinuation.create(key, patterns, continuation, false)
 
-        space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+        space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
           space.store.putWaitingContinuation(txn, key, wc)
           space.store.getWaitingContinuation(txn, key) shouldBe List(wc)
           space.store.clear(txn)
@@ -117,7 +117,7 @@ trait IStoreTests
       val wc2: WaitingContinuation[Pattern, StringsCaptor] =
         WaitingContinuation.create(key, List(StringMatch(pattern + 2)), continuation, false)
 
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.putWaitingContinuation(txn, key, wc1)
         space.store.putWaitingContinuation(txn, key, wc2)
         space.store.getWaitingContinuation(txn, key) should contain theSameElementsAs List(wc1, wc2)
@@ -137,7 +137,7 @@ trait IStoreTests
         val wc2: WaitingContinuation[Pattern, StringsCaptor] =
           WaitingContinuation.create(key, List(StringMatch(pattern + 2)), continuation, false)
 
-        space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+        space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
           space.store.putWaitingContinuation(txn, key, wc1)
           space.store.putWaitingContinuation(txn, key, wc2)
           space.store.removeWaitingContinuation(txn, key, 0)
@@ -149,7 +149,7 @@ trait IStoreTests
 
   "addJoin" should "add join for a channel" in withTestSpace { space =>
     forAll("channel", "channels") { (channel: String, channels: List[String]) =>
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.addJoin(txn, channel, channels)
         space.store.getJoin(txn, channel) shouldBe List(channels)
         space.store.clear(txn)
@@ -159,7 +159,7 @@ trait IStoreTests
 
   "removeJoin" should "remove join for a channel" in withTestSpace { space =>
     forAll("channel", "channels") { (channel: String, channels: List[String]) =>
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.addJoin(txn, channel, channels)
         space.store.removeJoin(txn, channel, channels)
         space.store.getJoin(txn, channel) shouldBe empty
@@ -170,7 +170,7 @@ trait IStoreTests
 
   it should "remove only passed in joins for a channel" in withTestSpace { space =>
     forAll("channel", "channels") { (channel: String, channels: List[String]) =>
-      space.transactional.withTxn(space.transactional.createTxnWrite()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnWrite()) { txn =>
         space.store.addJoin(txn, channel, channels)
         space.store.addJoin(txn, channel, List("otherChannel"))
         space.store.removeJoin(txn, channel, channels)

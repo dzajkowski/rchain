@@ -2,7 +2,9 @@ package coop.rchain.rspace.history
 
 import java.nio.ByteBuffer
 
-import coop.rchain.rspace.Blake2b256Hash
+import coop.rchain.catscontrib.Capture
+import coop.rchain.rspace.Transactional.LMDBTransactional
+import coop.rchain.rspace.{Blake2b256Hash, Transactional}
 import coop.rchain.shared.AttemptOps._
 import coop.rchain.shared.ByteVectorOps._
 import coop.rchain.shared.Resources.withResource
@@ -14,30 +16,14 @@ import scodec.bits.BitVector
 import scala.collection.immutable.Seq
 import scala.collection.JavaConverters._
 
-class LMDBTrieStore[K, V] private (val env: Env[ByteBuffer],
-                                   _dbTrie: Dbi[ByteBuffer],
-                                   _dbRoot: Dbi[ByteBuffer],
-                                   _dbPastRoots: Dbi[ByteBuffer])(implicit
-                                                                  codecK: Codec[K],
-                                                                  codecV: Codec[V])
-    extends ITrieStore[Txn[ByteBuffer], K, V] {
-
-  private[rspace] def createTxnRead(): Txn[ByteBuffer] = env.txnRead
-
-  private[rspace] def createTxnWrite(): Txn[ByteBuffer] = env.txnWrite
-
-  private[rspace] def withTxn[R](txn: Txn[ByteBuffer])(f: Txn[ByteBuffer] => R): R =
-    try {
-      val ret: R = f(txn)
-      txn.commit()
-      ret
-    } catch {
-      case ex: Throwable =>
-        txn.abort()
-        throw ex
-    } finally {
-      txn.close()
-    }
+class LMDBTrieStore[F[_]: Capture: LMDBTransactional, K, V] private (val env: Env[ByteBuffer],
+                                                                     _dbTrie: Dbi[ByteBuffer],
+                                                                     _dbRoot: Dbi[ByteBuffer],
+                                                                     _dbPastRoots: Dbi[ByteBuffer])(
+    implicit
+    codecK: Codec[K],
+    codecV: Codec[V])
+    extends ITrieStore[F, Txn[ByteBuffer], K, V] {
 
   private[rspace] def put(txn: Txn[ByteBuffer], key: Blake2b256Hash, value: Trie[K, V]): Unit = {
     val encodedKey   = Codec[Blake2b256Hash].encode(key).get
@@ -56,14 +42,16 @@ class LMDBTrieStore[K, V] private (val env: Env[ByteBuffer],
     }
   }
 
-  private[rspace] def toMap: Map[Blake2b256Hash, Trie[K, V]] =
-    withTxn(createTxnRead()) { txn =>
-      withResource(_dbTrie.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
-        it.asScala.foldLeft(Map.empty[Blake2b256Hash, Trie[K, V]]) {
-          (map: Map[Blake2b256Hash, Trie[K, V]], x: CursorIterator.KeyVal[ByteBuffer]) =>
-            val key   = Codec[Blake2b256Hash].decode(BitVector(x.key())).map(_.value).get
-            val value = Codec[Trie[K, V]].decode(BitVector(x.`val`())).map(_.value).get
-            map + ((key, value))
+  private[rspace] def toMap: F[Map[Blake2b256Hash, Trie[K, V]]] =
+    LMDBTransactional[F].withTxn(LMDBTransactional[F].createTxnRead()) { txn =>
+      Capture[F].capture {
+        withResource(_dbTrie.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
+          it.asScala.foldLeft(Map.empty[Blake2b256Hash, Trie[K, V]]) {
+            (map: Map[Blake2b256Hash, Trie[K, V]], x: CursorIterator.KeyVal[ByteBuffer]) =>
+              val key   = Codec[Blake2b256Hash].decode(BitVector(x.key())).map(_.value).get
+              val value = Codec[Trie[K, V]].decode(BitVector(x.`val`())).map(_.value).get
+              map + ((key, value))
+          }
         }
       }
     }
@@ -156,12 +144,13 @@ class LMDBTrieStore[K, V] private (val env: Env[ByteBuffer],
 
 object LMDBTrieStore {
 
-  def create[K, V](env: Env[ByteBuffer])(implicit
-                                         codecK: Codec[K],
-                                         codecV: Codec[V]): LMDBTrieStore[K, V] = {
+  def create[F[_]: Capture: LMDBTransactional, K, V](env: Env[ByteBuffer])(
+      implicit
+      codecK: Codec[K],
+      codecV: Codec[V]): LMDBTrieStore[F, K, V] = {
     val dbTrie: Dbi[ByteBuffer]      = env.openDbi("Trie", MDB_CREATE)
     val dbRoots: Dbi[ByteBuffer]     = env.openDbi("Roots", MDB_CREATE)
     val dbPastRoots: Dbi[ByteBuffer] = env.openDbi("PastRoots", MDB_CREATE)
-    new LMDBTrieStore[K, V](env, dbTrie, dbRoots, dbPastRoots)
+    new LMDBTrieStore[F, K, V](env, dbTrie, dbRoots, dbPastRoots)
   }
 }

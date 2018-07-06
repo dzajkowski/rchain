@@ -2,6 +2,7 @@ package coop.rchain.rspace.history
 
 import java.nio.ByteBuffer
 
+import cats.Id
 import coop.rchain.rspace.test.TestKey5
 import org.lmdbjava.Txn
 import scodec.Codec
@@ -9,7 +10,7 @@ import scodec.bits.ByteVector
 import scodec.codecs.{bytes, int64, variableSizeBytesLong}
 
 class TrieStructureTestsKeyLength5
-    extends HistoryTestsBase[Txn[ByteBuffer], TestKey5, ByteVector]
+    extends HistoryTestsBase[Id, Txn[ByteBuffer], TestKey5, ByteVector]
     with LMDBWithTestTrieStore[TestKey5] {
 
   implicit val codecV: Codec[ByteVector] = variableSizeBytesLong(int64, bytes)

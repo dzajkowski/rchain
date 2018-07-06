@@ -27,7 +27,9 @@ trait ISpace[C, P, A, R, K] {
 
   val branch: Branch
 
-  val transactional: Transactional[Id, store.T]
+  val storeTransactional: Transactional[Id, store.T]
+  val trieTransactional: Transactional[Id, store.TT]
+  val combinedTxnal: Transactional[Id, (store.T, store.TT)]
 
   /* Consume */
 
@@ -59,12 +61,12 @@ trait ISpace[C, P, A, R, K] {
     }
 
   def getData(channel: C): Seq[Datum[A]] =
-    transactional.withTxn(transactional.createTxnRead()) { txn =>
+    storeTransactional.withTxn(storeTransactional.createTxnRead()) { txn =>
       store.getData(txn, Seq(channel))
     }
 
   def getWaitingContinuations(channels: Seq[C]): Seq[WaitingContinuation[P, K]] =
-    transactional.withTxn(transactional.createTxnRead()) { txn =>
+    storeTransactional.withTxn(storeTransactional.createTxnRead()) { txn =>
       store.getWaitingContinuation(txn, channels)
     }
 
@@ -189,13 +191,12 @@ trait ISpace[C, P, A, R, K] {
     * @param root A BLAKE2b256 Hash representing the checkpoint
     */
   def reset(root: Blake2b256Hash): Unit =
-    transactional.withTxn(transactional.createTxnWrite()) { txn =>
-      store.withTrieTxn(txn) { trieTxn =>
+    combinedTxnal.withTxn(combinedTxnal.createTxnWrite()) {
+      case (txn, trieTxn) =>
         store.trieStore.validateAndPutRoot(trieTxn, store.trieBranch, root)
         val leaves = store.trieStore.getLeaves(trieTxn, root)
         store.clear(txn)
         store.bulkInsert(txn, leaves.map { case Leaf(k, v) => (k, v) })
-      }
     }
 
   /** Closes

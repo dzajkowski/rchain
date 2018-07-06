@@ -101,10 +101,9 @@ object Runtime {
 
     if (Files.notExists(dataDir)) Files.createDirectories(dataDir)
 
-    val context = Context.create[Channel, BindPattern, ListChannelWithRandom, TaggedContinuation](
-      dataDir,
-      mapSize
-    )
+    val env = Context.env(dataDir, mapSize)
+
+    val context = Context.create[Channel, BindPattern, ListChannelWithRandom, TaggedContinuation](env, dataDir)
 
     val space = RSpace.create[Channel,
                               BindPattern,

@@ -120,15 +120,20 @@ class InMemoryStoreTestsBase
 
     implicit val inMemTxn: Transactional[Id, InMemTxn] = inMemTxnX(stateRef)
 
-    val trieStore
-      : ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[String, Pattern, String, StringsCaptor]] =
+    val trieStore: ITrieStore[Id,
+                              Txn[ByteBuffer],
+                              Blake2b256Hash,
+                              GNAT[String, Pattern, String, StringsCaptor]] =
       LMDBTrieStore.create[Blake2b256Hash, GNAT[String, Pattern, String, StringsCaptor]](env)
 
     val testStore =
       InMemoryStore.create[String, Pattern, String, StringsCaptor](trieStore, branch)
     val testSpace =
-      new RSpace[String, Pattern, String, String, StringsCaptor, InMemTxn](testStore, branch)
-    testSpace.transactional.withTxn(testSpace.transactional.createTxnWrite())(testStore.clear)
+      new RSpace[String, Pattern, String, String, StringsCaptor, InMemTxn, Txn[ByteBuffer]](
+        testStore,
+        branch)
+    testSpace.storeTransactional.withTxn(testSpace.storeTransactional.createTxnWrite())(
+      testStore.clear)
     trieStore.withTxn(trieStore.createTxnWrite())(trieStore.clear)
     initialize(trieStore, branch)
     try {
@@ -156,18 +161,21 @@ class LMDBStoreTestsBase
     implicit val codecP: Codec[Pattern]       = implicitly[Serialize[Pattern]].toCodec
     implicit val codecK: Codec[StringsCaptor] = implicitly[Serialize[StringsCaptor]].toCodec
 
+    val env = Context.env(dbDir, mapSize, List(EnvFlags.MDB_NOTLS))
+
     val testBranch = Branch("test")
-    val context: Context[String, Pattern, String, StringsCaptor] = Context
-      .create[String, Pattern, String, StringsCaptor](dbDir, mapSize, List(EnvFlags.MDB_NOTLS))
+    val context: Context[Id, String, Pattern, String, StringsCaptor] = Context
+      .create[String, Pattern, String, StringsCaptor](env, dbDir)
     implicit val transactional: Transactional[Id, Txn[ByteBuffer]] =
-      Transactional.lmdbTransactional(context.env)
+      Transactional.lmdbTransactional(env)
     val testStore =
       LMDBStore.create[Id, String, Pattern, String, StringsCaptor](context, testBranch)
     val testSpace =
-      new RSpace[String, Pattern, String, String, StringsCaptor, Txn[ByteBuffer]](testStore,
-                                                                                  testBranch)
+      new RSpace[String, Pattern, String, String, StringsCaptor, Txn[ByteBuffer], Txn[ByteBuffer]](
+        testStore,
+        testBranch)
 
-    testSpace.transactional.withTxn(testSpace.transactional.createTxnWrite()) { txn =>
+    testSpace.storeTransactional.withTxn(testSpace.storeTransactional.createTxnWrite()) { txn =>
       testStore.clear(txn)
       testStore.trieStore.clear(txn)
     }

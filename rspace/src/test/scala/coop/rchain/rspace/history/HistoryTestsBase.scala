@@ -1,7 +1,8 @@
 package coop.rchain.rspace.history
 
 import com.typesafe.scalalogging.Logger
-import coop.rchain.rspace.Blake2b256Hash
+import coop.rchain.catscontrib.Capture
+import coop.rchain.rspace.{Blake2b256Hash, Transactional}
 import coop.rchain.rspace.test.TestKey4
 import org.scalactic.anyvals.PosInt
 import org.scalatest.prop.{Configuration, GeneratorDrivenPropertyChecks}
@@ -9,27 +10,35 @@ import org.scalatest.{FlatSpec, Matchers, OptionValues, Outcome}
 import scodec.Codec
 import scodec.bits.ByteVector
 
-trait HistoryTestsBase[T, K, V]
+trait HistoryTestsBase[F[_], T, K, V]
     extends FlatSpec
     with Matchers
     with OptionValues
     with GeneratorDrivenPropertyChecks
     with Configuration
-    with WithTestStore[T, K, V] {
+    with WithTestStore[F, T, K, V] {
 
-  def getRoot(store: ITrieStore[T, K, V], branch: Branch): Option[Blake2b256Hash] =
-    store.withTxn(store.createTxnRead())(txn => store.getRoot(txn, branch))
+  def getRoot(store: ITrieStore[F, T, K, V], branch: Branch)(
+      implicit txnal: Transactional[F, T],
+      capture: Capture[F]): F[Option[Blake2b256Hash]] =
+    txnal.withTxn(txnal.createTxnRead())(txn => capture.capture { store.getRoot(txn, branch) })
 
-  def setRoot(store: ITrieStore[T, K, V], branch: Branch, hash: Blake2b256Hash): Unit =
-    store.withTxn(store.createTxnWrite()) { txn =>
-      store.get(txn, hash) match {
-        case Some(Node(_)) => store.putRoot(txn, branch, hash)
-        case _             => throw new Exception(s"no node at $hash")
+  def setRoot(store: ITrieStore[F, T, K, V], branch: Branch, hash: Blake2b256Hash)(
+      implicit txnal: Transactional[F, T],
+      capture: Capture[F]): Unit =
+    txnal.withTxn(txnal.createTxnWrite()) { txn =>
+      capture.capture {
+        store.get(txn, hash) match {
+          case Some(Node(_)) => store.putRoot(txn, branch, hash)
+          case _             => throw new Exception(s"no node at $hash")
+        }
       }
     }
 
-  def getLeaves(store: ITrieStore[T, K, V], hash: Blake2b256Hash): Seq[Leaf[K, V]] =
-    store.withTxn(store.createTxnRead())(txn => store.getLeaves(txn, hash))
+  def getLeaves(store: ITrieStore[F, T, K, V], hash: Blake2b256Hash)(
+      implicit txnal: Transactional[F, T],
+      capture: Capture[F]): Seq[Leaf[K, V]] =
+    txnal.withTxn(txnal.createTxnRead())(txn => capture.capture { store.getLeaves(txn, hash) })
 
   object TestData {
     val key1 = TestKey4.create(Seq(1, 0, 0, 0))
@@ -57,12 +66,12 @@ trait HistoryTestsBase[T, K, V]
   }
 }
 
-trait WithTestStore[T, K, V] {
+trait WithTestStore[F[_], T, K, V] {
 
   implicit def codecK: Codec[K]
   implicit def codecV: Codec[V]
 
   /** A fixture for creating and running a test with a fresh instance of the test store.
     */
-  def withTestTrieStore[R](f: (ITrieStore[T, K, V], Branch) => R): R
+  def withTestTrieStore[R](f: Transactional[F, T] => ITrieStore[F, T, K, V] => Branch => R): R
 }

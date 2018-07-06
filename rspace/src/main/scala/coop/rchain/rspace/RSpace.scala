@@ -18,16 +18,18 @@ import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
 import scala.util.Random
 
-class RSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN], val branch: Branch)(
+class RSpace[C, P, A, R, K, TXN, TRIETXN](val store: IStore.AUX[Id, C, P, A, K, TXN, TRIETXN],
+                                          val branch: Branch)(
     implicit
     serializeC: Serialize[C],
     serializeP: Serialize[P],
     serializeA: Serialize[A],
     serializeK: Serialize[K],
-    transactionalEv: Transactional[Id, TXN]
+    override val storeTransactional: Transactional[Id, TXN],
+    override val trieTransactional: Transactional[Id, TRIETXN],
+    override val combinedTxnal: Transactional[Id, (TXN, TRIETXN)]
 ) extends ISpace[C, P, A, R, K] {
-  private val logger: Logger                         = Logger[this.type]
-  override val transactional: Transactional[Id, TXN] = transactionalEv
+  private val logger: Logger = Logger[this.type]
 
   private val eventLog: SyncVar[Log] = {
     val log = new SyncVar[Log]()
@@ -43,7 +45,7 @@ class RSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN], val
         logger.error(msg)
         throw new IllegalArgumentException(msg)
       }
-      transactional.withTxn(transactional.createTxnWrite()) { txn =>
+      storeTransactional.withTxn(storeTransactional.createTxnWrite()) { txn =>
         logger.debug(s"""|consume: searching for data matching <patterns: $patterns>
                          |at <channels: $channels>""".stripMargin.replace('\n', ' '))
 
@@ -104,7 +106,7 @@ class RSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN], val
       logger.error(msg)
       throw new IllegalArgumentException(msg)
     }
-    transactional.withTxn(transactional.createTxnWrite()) { txn =>
+    storeTransactional.withTxn(storeTransactional.createTxnWrite()) { txn =>
       logger.debug(s"""|install: searching for data matching <patterns: $patterns>
                        |at <channels: $channels>""".stripMargin.replace('\n', ' '))
 
@@ -160,7 +162,7 @@ class RSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN], val
   def produce(channel: C, data: A, persist: Boolean)(
       implicit m: Match[P, A, R]): Option[(K, Seq[R])] =
     store.eventsCounter.registerProduce {
-      transactional.withTxn(transactional.createTxnWrite()) { txn =>
+      storeTransactional.withTxn(storeTransactional.createTxnWrite()) { txn =>
         val groupedChannels: Seq[Seq[C]] = store.getJoin(txn, channel)
         logger.debug(s"""|produce: searching for matching continuations
                          |at <groupedChannels: $groupedChannels>""".stripMargin.replace('\n', ' '))
@@ -247,12 +249,12 @@ class RSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN], val
 
 object RSpace {
 
-  def create[C, P, A, R, K](context: Context[C, P, A, K], branch: Branch)(
+  def create[C, P, A, R, K](context: Context[Id, C, P, A, K], branch: Branch)(
       implicit
       sc: Serialize[C],
       sp: Serialize[P],
       sa: Serialize[A],
-      sk: Serialize[K]): RSpace[C, P, A, R, K, Txn[ByteBuffer]] = {
+      sk: Serialize[K]): RSpace[C, P, A, R, K, Txn[ByteBuffer], Txn[ByteBuffer]] = {
 
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec
@@ -260,11 +262,12 @@ object RSpace {
     implicit val codecK: Codec[K] = sk.toCodec
 
     implicit val lMDBTransactional = Transactional.lmdbTransactional[Id](context.env)
+    implicit val lmdbCombined      = Transactional.lmdbCombined[Id](context.env)
 
     history.initialize(context.trieStore, branch)
 
     val mainStore = LMDBStore.create[Id, C, P, A, K](context, branch)
 
-    new RSpace[C, P, A, R, K, Txn[ByteBuffer]](mainStore, branch)
+    new RSpace[C, P, A, R, K, Txn[ByteBuffer], Txn[ByteBuffer]](mainStore, branch)
   }
 }

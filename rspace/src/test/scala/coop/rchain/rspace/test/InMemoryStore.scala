@@ -47,13 +47,14 @@ object State {
 }
 
 class InMemoryStore[C, P, A, K](
-    val trieStore: ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
+    val trieStore: ITrieStore[Id, Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
     val trieBranch: Branch
 )(implicit sc: Serialize[C],
   sp: Serialize[P],
   sa: Serialize[A],
   sk: Serialize[K],
-  transactional: Transactional[Id, Transaction[State[C, P, A, K]]])
+  transactional: Transactional[Id, Transaction[State[C, P, A, K]]],
+  trieTxnal: Transactional[Id, Txn[ByteBuffer]])
     extends IStore[Id, C, P, A, K] {
 
   private implicit val codecK: Codec[K] = sk.toCodec
@@ -72,7 +73,7 @@ class InMemoryStore[C, P, A, K](
     StableHashProvider.hash(channels)
 
   override def withTrieTxn[R](txn: Transaction[StateType])(f: Txn[ByteBuffer] => R): R =
-    trieStore.withTxn(trieStore.createTxnWrite()) { ttxn =>
+    trieTxnal.withTxn(trieTxnal.createTxnWrite()) { ttxn =>
       f(ttxn)
     }
 
@@ -259,14 +260,14 @@ object InMemoryStore {
       case Right(value) => value
     }
 
-  def create[C, P, A, K](trieStore: ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
-                         branch: Branch)(
-      implicit sc: Serialize[C],
-      sp: Serialize[P],
-      sa: Serialize[A],
-      sk: Serialize[K],
-      transactional: Transactional[Id, Transaction[State[C, P, A, K]]])
-    : InMemoryStore[C, P, A, K] = {
+  def create[C, P, A, K](
+      trieStore: ITrieStore[Id, Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
+      branch: Branch)(implicit sc: Serialize[C],
+                      sp: Serialize[P],
+                      sa: Serialize[A],
+                      sk: Serialize[K],
+                      transactional: Transactional[Id, Transaction[State[C, P, A, K]]],
+                      trieTxnal: Transactional[Id, Txn[ByteBuffer]]): InMemoryStore[C, P, A, K] = {
     implicit val codecK: Codec[K] = sk.toCodec
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec

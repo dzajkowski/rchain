@@ -3,12 +3,14 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.Files
 
+import cats.Id
 import com.google.common.collect.Multiset
 import com.typesafe.scalalogging.Logger
 import coop.rchain.rspace.examples.StringExamples._
 import coop.rchain.rspace.examples.StringExamples.implicits._
 import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.trace.{COMM, Consume, IOEvent, Produce}
+import coop.rchain.catscontrib._
 import org.lmdbjava.Txn
 import org.scalatest._
 
@@ -743,16 +745,19 @@ trait ReplayRSpaceTestsBase[C, P, A, K]
     super.withFixture(test)
   }
 
-  def withTestSpaces[S](f: (RSpace[C, P, A, A, K, Txn[ByteBuffer]],
-                            ReplayRSpace[C, P, A, A, K, Txn[ByteBuffer]]) => S)(
+  def withTestSpaces[S](f: (RSpace[C, P, A, A, K, Txn[ByteBuffer], Txn[ByteBuffer]],
+                            ReplayRSpace[C, P, A, A, K, Txn[ByteBuffer], Txn[ByteBuffer]]) => S)(
       implicit
       sc: Serialize[C],
       sp: Serialize[P],
       sa: Serialize[A],
       sk: Serialize[K]): S = {
 
-    val dbDir       = Files.createTempDirectory("rchain-storage-test-")
-    val context     = Context.create[C, P, A, K](dbDir, 1024L * 1024L * 4096L)
+    val dbDir = Files.createTempDirectory("rchain-storage-test-")
+    val env   = Context.env(dbDir, 1024L * 1024L * 4096L)
+    implicit val transactional: Transactional[Id, Txn[ByteBuffer]] =
+      Transactional.lmdbTransactional(env)
+    val context     = Context.create[Id, C, P, A, K](env, dbDir)
     val space       = RSpace.create[C, P, A, A, K](context, Branch.MASTER)
     val replaySpace = ReplayRSpace.create[C, P, A, A, K](context, Branch.REPLAY)
 

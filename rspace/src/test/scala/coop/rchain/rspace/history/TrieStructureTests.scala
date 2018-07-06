@@ -2,22 +2,24 @@ package coop.rchain.rspace.history
 
 import java.nio.ByteBuffer
 
-import coop.rchain.rspace.Blake2b256Hash
+import cats.Id
+import coop.rchain.rspace.{Blake2b256Hash, Transactional}
 import coop.rchain.rspace.test.{printTree, TestKey4}
+import coop.rchain.catscontrib._
 import org.lmdbjava.Txn
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
 
 class TrieStructureTests
-    extends HistoryTestsBase[Txn[ByteBuffer], TestKey4, ByteVector]
+    extends HistoryTestsBase[Id, Txn[ByteBuffer], TestKey4, ByteVector]
     with LMDBWithTestTrieStore[TestKey4] {
 
   implicit val codecV: Codec[ByteVector] = variableSizeBytesLong(int64, bytes)
   implicit val codecK: Codec[TestKey4]   = TestKey4.codecTestKey
 
   def withTrie[R](f: Trie[TestKey4, ByteVector] => R): R =
-    withTestTrieStore { (store, branch) =>
+    withTestTrieStore { (txnal, store, branch) =>
       store.withTxn(store.createTxnRead()) { txn =>
         val trieOpt = store.get(txn, store.getRoot(txn, branch).get)
         trieOpt should not be empty
@@ -26,11 +28,11 @@ class TrieStructureTests
     }
 
   def withTrieTxnAndStore[R](
-      f: (ITrieStore[Txn[ByteBuffer], TestKey4, ByteVector],
+      f: (ITrieStore[Id, Txn[ByteBuffer], TestKey4, ByteVector],
           Branch,
           Txn[ByteBuffer],
           Trie[TestKey4, ByteVector]) => R): R =
-    withTestTrieStore { (store, branch) =>
+    withTestTrieStore { (txnal, store, branch) =>
       store.withTxn(store.createTxnRead()) { txn =>
         val trieOpt = store.get(txn, store.getRoot(txn, branch).get)
         trieOpt should not be empty
@@ -78,7 +80,7 @@ class TrieStructureTests
     }
 
   it should "have two levels after inserting one element" in {
-    withTestTrieStore { (store, branch) =>
+    withTestTrieStore { (txnal, store, branch) =>
       import SingleElementData._
       insert(store, branch, key1, val1)
 
@@ -87,7 +89,7 @@ class TrieStructureTests
   }
 
   it should "have four levels after inserting second element with same hash prefix" in {
-    withTestTrieStore { (store, branch) =>
+    withTestTrieStore { (txnal, store, branch) =>
       import CommonPrefixData._
       insert(store, branch, key1, val1)
       insert(store, branch, key2, val2)
@@ -97,7 +99,7 @@ class TrieStructureTests
   }
 
   it should "retain previous structure after delete" in {
-    withTestTrieStore { (store, branch) =>
+    withTestTrieStore { (txnal, store, branch) =>
       import CommonPrefixData._
 
       insert(store, branch, key1, val1)
@@ -111,7 +113,7 @@ class TrieStructureTests
   }
 
   it should "retain previous structure after rollback" in {
-    withTestTrieStore { (store, branch) =>
+    withTestTrieStore { (txnal, store, branch) =>
       import CommonPrefixData._
 
       insert(store, branch, key1, val1)
@@ -133,11 +135,11 @@ class TrieStructureTests
     TestKey4.create(s.map(c => Integer.parseInt(c.toString)))
 
   it should "build one level of skip nodes for 4 element key" in withTestTrieStore {
-    (store, branch) =>
+    (txnal, store, branch) =>
       val k1: TestKey4 = "1000"
       insert(store, branch, k1, TestData.val1)
 
-      store.withTxn(store.createTxnRead()) { txn =>
+      txnal.withTxn(txnal.createTxnRead()) { txn =>
         val root = store.get(txn, store.getRoot(txn, branch).get).get.asInstanceOf[Node]
         root.pointerBlock.children should have size 1
         root.pointerBlock.childrenWithIndex(0)._2 shouldBe 1
@@ -154,7 +156,7 @@ class TrieStructureTests
   }
 
   it should "build two levels of skip nodes for 4 element key" in withTestTrieStore {
-    (store, branch) =>
+    (txnal, store, branch) =>
       val k1: TestKey4 = "1000"
       val k2: TestKey4 = "1001"
       insert(store, branch, k1, TestData.val1)
@@ -199,7 +201,7 @@ class TrieStructureTests
   }
 
   it should "not add unnecessary skip on 1st level after root" in withTestTrieStore {
-    (store, branch) =>
+    (txnal, store, branch) =>
       val k1 = TestKey4.create(Vector(1, 0, 1, 0))
       val k2 = TestKey4.create(Vector(1, 1, 0, 0))
       insert(store, branch, k1, TestData.val1)
@@ -234,9 +236,10 @@ class TrieStructureTests
   }
 
   private[this] def assertSingleElementTrie(
-      implicit store: ITrieStore[Txn[ByteBuffer], TestKey4, ByteVector]) = {
+      implicit store: ITrieStore[Id, Txn[ByteBuffer], TestKey4, ByteVector],
+      txnal: Transactional[Id, Txn[ByteBuffer]]) = {
     import SingleElementData._
-    store.withTxn(store.createTxnRead()) { implicit txn =>
+    txnal.withTxn(txnal.createTxnRead()) { implicit txn =>
       expectNode(rootHex, Seq((1, NodePointer(skipHex))))
       val expectedSkipHash = Blake2b256Hash.fromHex(skipHex)
       store.get(txn, expectedSkipHash) shouldBe Some(
@@ -249,9 +252,10 @@ class TrieStructureTests
   }
 
   private[this] def assertCommonPrefixTrie(
-      implicit store: ITrieStore[Txn[ByteBuffer], TestKey4, ByteVector]) = {
+      implicit store: ITrieStore[Id, Txn[ByteBuffer], TestKey4, ByteVector],
+      txnal: Transactional[Id, Txn[ByteBuffer]]) = {
     import CommonPrefixData._
-    store.withTxn(store.createTxnRead()) { implicit txn =>
+    txnal.withTxn(txnal.createTxnRead()) { implicit txn =>
       expectNode(rootHex, Seq((1, NodePointer(level1Hex))))
       expectSkip(level1Hex, ByteVector(Seq(0, 0).map(_.toByte)), NodePointer(level3Hex))
       expectNode(level3Hex, Seq((0, LeafPointer(leaf1Hex)), (1, LeafPointer(leaf2Hex))))
@@ -271,7 +275,7 @@ class TrieStructureTests
 
   private[this] def expectNode(currentHex: String, childHexes: Seq[(Int, Pointer)])(
       implicit txn: Txn[ByteBuffer],
-      store: ITrieStore[Txn[ByteBuffer], TestKey4, ByteVector]) =
+      store: ITrieStore[Id, Txn[ByteBuffer], TestKey4, ByteVector]) =
     store.get(txn,
               Blake2b256Hash
                 .fromHex(currentHex)) match {
@@ -290,7 +294,7 @@ class TrieStructureTests
 
   def expectSkip(currentHex: String, expectedAffix: ByteVector, expectedPointer: NonEmptyPointer)(
       implicit txn: Txn[ByteBuffer],
-      store: ITrieStore[Txn[ByteBuffer], TestKey4, ByteVector]) =
+      store: ITrieStore[Id, Txn[ByteBuffer], TestKey4, ByteVector]) =
     store.get(txn,
               Blake2b256Hash
                 .fromHex(currentHex)) match {

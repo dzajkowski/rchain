@@ -4,9 +4,6 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 
 import cats.Monad
-import cats._
-import cats.data._
-import cats.implicits._
 import coop.rchain.catscontrib.Capture
 import coop.rchain.rspace.Transactional.LMDBTransactional
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, Leaf}
@@ -31,24 +28,27 @@ import scala.language.higherKinds
   *
   * To create an instance, use [[LMDBStore.create]].
   */
-class LMDBStore[F[_]: Capture: Monad: LMDBTransactional, C, P, A, K] private (
+class LMDBStore[F[_]: Monad: LMDBTransactional, C, P, A, K] private (
     env: Env[ByteBuffer],
     databasePath: Path,
     _dbGNATs: Dbi[ByteBuffer],
     _dbJoins: Dbi[ByteBuffer],
-    val trieStore: ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
+    val trieStore: ITrieStore[F, Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
     val trieBranch: Branch
 )(implicit
   codecC: Codec[C],
   codecP: Codec[P],
   codecA: Codec[A],
-  codecK: Codec[K])
+  codecK: Codec[K],
+  override val capture: Capture[F])
     extends IStore[F, C, P, A, K] {
 
 //  import LMDBTransactional[F]._
 
   // Good luck trying to get this to resolve as an implicit
   val joinCodec: Codec[Seq[Seq[C]]] = codecSeq(codecSeq(codecC))
+
+  override val trieTransactional = LMDBTransactional[F]
 
   private[rspace] type T  = Txn[ByteBuffer]
   private[rspace] type TT = T
@@ -309,7 +309,7 @@ class LMDBStore[F[_]: Capture: Monad: LMDBTransactional, C, P, A, K] private (
 
 object LMDBStore {
 
-  def create[F[_]: Capture: Monad: LMDBTransactional, C, P, A, K](context: Context[C, P, A, K],
+  def create[F[_]: Capture: Monad: LMDBTransactional, C, P, A, K](context: Context[F, C, P, A, K],
                                                                   branch: Branch)(
       implicit
       sc: Serialize[C],

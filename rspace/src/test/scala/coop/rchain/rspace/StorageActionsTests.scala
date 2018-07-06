@@ -10,6 +10,7 @@ import coop.rchain.rspace.util._
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.trace.{COMM, Consume, Produce}
 import coop.rchain.rspace.test.ArbitraryInstances._
+import coop.rchain.catscontrib._
 import org.scalacheck.Prop
 import org.scalatest._
 import org.scalatest.prop.{Checkers, GeneratorDrivenPropertyChecks}
@@ -30,7 +31,7 @@ trait StorageActionsTests
 
     val r = space.produce(key.head, "datum", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe key
       space.store.getPatterns(txn, key) shouldBe Nil
       space.store.getData(txn, key) shouldBe List(Datum.create(key.head, "datum", persist = false))
@@ -55,7 +56,7 @@ trait StorageActionsTests
 
     val r1 = space.produce(key.head, "datum1", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe key
       space.store.getPatterns(txn, key) shouldBe Nil
       space.store.getData(txn, key) shouldBe List(Datum.create(key.head, "datum1", false))
@@ -66,7 +67,7 @@ trait StorageActionsTests
 
     val r2 = space.produce(key.head, "datum2", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe key
       space.store.getPatterns(txn, key) shouldBe Nil
       space.store.getData(txn, key) should contain theSameElementsAs List(
@@ -94,7 +95,7 @@ trait StorageActionsTests
 
     val r = space.consume(key, patterns, new StringsCaptor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe List("ch1")
       space.store.getPatterns(txn, key) shouldBe List(patterns)
       space.store.getData(txn, key) shouldBe Nil
@@ -134,7 +135,7 @@ trait StorageActionsTests
 
     val r = space.consume(key, patterns, new StringsCaptor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe key
       space.store.getPatterns(txn, key) shouldBe List(patterns)
       space.store.getData(txn, key) shouldBe Nil
@@ -159,7 +160,7 @@ trait StorageActionsTests
 
     val r1 = space.produce(key.head, "datum", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe key
       space.store.getPatterns(txn, key) shouldBe Nil
       space.store.getData(txn, key) shouldBe List(Datum.create(key.head, "datum", false))
@@ -172,7 +173,7 @@ trait StorageActionsTests
 
     space.store.isEmpty shouldBe true
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe Nil
       space.store.getPatterns(txn, key) shouldBe Nil
       space.store.getData(txn, key) shouldBe Nil
@@ -237,7 +238,7 @@ trait StorageActionsTests
 
     val r1 = space.produce(produceKey1.head, "datum1", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, produceKey1Hash) shouldBe produceKey1
       space.store.getPatterns(txn, produceKey1) shouldBe Nil
       space.store.getData(txn, produceKey1) shouldBe List(
@@ -253,7 +254,7 @@ trait StorageActionsTests
 
     val r2 = space.consume(consumeKey, consumePattern, new StringsCaptor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, produceKey1Hash) shouldBe produceKey1
       space.store.getPatterns(txn, produceKey1) shouldBe Nil
       space.store.getData(txn, produceKey1) shouldBe List(
@@ -272,7 +273,7 @@ trait StorageActionsTests
 
     val r3 = space.produce(produceKey2.head, "datum2", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, produceKey1Hash) shouldBe Nil
       space.store.getPatterns(txn, produceKey1) shouldBe Nil
       space.store.getData(txn, produceKey1) shouldBe Nil
@@ -316,7 +317,7 @@ trait StorageActionsTests
 
     val r1 = space.produce(produceKey1.head, "datum1", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, produceKey1Hash) shouldBe produceKey1
       space.store.getPatterns(txn, produceKey1) shouldBe Nil
       space.store.getData(txn, produceKey1) shouldBe List(
@@ -328,7 +329,7 @@ trait StorageActionsTests
 
     val r2 = space.produce(produceKey2.head, "datum2", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, produceKey2Hash) shouldBe produceKey2
       space.store.getPatterns(txn, produceKey2) shouldBe Nil
       space.store.getData(txn, produceKey2) shouldBe List(
@@ -340,7 +341,7 @@ trait StorageActionsTests
 
     val r3 = space.produce(produceKey3.head, "datum3", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, produceKey3Hash) shouldBe produceKey3
       space.store.getPatterns(txn, produceKey3) shouldBe Nil
       space.store.getData(txn, produceKey3) shouldBe List(
@@ -352,7 +353,7 @@ trait StorageActionsTests
 
     val r4 = space.consume(List("ch1", "ch2", "ch3"), patterns, new StringsCaptor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, consumeKeyHash) shouldBe Nil
       space.store.getPatterns(txn, consumeKey) shouldBe Nil
       space.store.getData(txn, consumeKey) shouldBe Nil
@@ -392,7 +393,7 @@ trait StorageActionsTests
     val r5 = space.consume(key, List(Wildcard), captor, persist = false)
     val r6 = space.consume(key, List(Wildcard), captor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, space.store.hashChannels(key)) shouldBe Nil
       space.store.getData(txn, key) shouldBe Nil
       space.store.getPatterns(txn, key) shouldBe Nil
@@ -588,12 +589,12 @@ trait StorageActionsTests
     r1 shouldBe None
     r2 shouldBe None
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1", "ch2")) shouldBe Nil
       space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", false))
     }
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getWaitingContinuation(txn, List("ch1", "ch2")) should not be empty
       space.store.getJoin(txn, "ch1") shouldBe List(List("ch1", "ch2"))
       space.store.getJoin(txn, "ch2") shouldBe List(List("ch1", "ch2"))
@@ -619,7 +620,7 @@ trait StorageActionsTests
 
     List(r1, r2, r3, r4).foreach(runK)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) shouldBe Nil
       space.store.getData(txn, List("ch2")) shouldBe Nil
     }
@@ -648,7 +649,7 @@ trait StorageActionsTests
       val r3 = space.produce("ch1", "datum1", persist = false)
       val r4 = space.produce("ch2", "datum2", persist = false)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getWaitingContinuation(txn, List("ch1", "ch2")) should not be empty
         space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
         space.store.getWaitingContinuation(txn, List("ch2")) shouldBe Nil
@@ -663,7 +664,7 @@ trait StorageActionsTests
 
       getK(r3).results should contain theSameElementsAs List(List("datum1"))
       //ensure that joins are cleaned-up after all
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getJoin(txn, "ch1") shouldBe List(List("ch1", "ch2"))
         space.store.getJoin(txn, "ch2") shouldBe List(List("ch1", "ch2"))
       }
@@ -686,7 +687,7 @@ trait StorageActionsTests
 
     val r1 = space.produce(key.head, "datum", persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe key
       space.store.getPatterns(txn, key) shouldBe Nil
       space.store.getData(txn, key) shouldBe List(Datum.create(key.head, "datum", false))
@@ -709,7 +710,7 @@ trait StorageActionsTests
     // the data has been consumed, so the write will "stick"
     val r3 = space.consume(key, List(Wildcard), new StringsCaptor, persist = true)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getChannels(txn, keyHash) shouldBe List("ch1")
       space.store.getPatterns(txn, key) shouldBe List(List(Wildcard))
       space.store.getData(txn, key) shouldBe Nil
@@ -733,7 +734,7 @@ trait StorageActionsTests
 
       val r1 = space.produce(key.head, "datum1", persist = false)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getChannels(txn, keyHash) shouldBe key
         space.store.getPatterns(txn, key) shouldBe Nil
         space.store.getData(txn, key) shouldBe List(Datum.create(key.head, "datum1", false))
@@ -756,7 +757,7 @@ trait StorageActionsTests
       // All matching data has been consumed, so the write will "stick"
       val r3 = space.consume(key, List(Wildcard), new StringsCaptor, persist = true)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getChannels(txn, keyHash) shouldBe List("ch1")
         space.store.getPatterns(txn, key) shouldBe List(List(Wildcard))
         space.store.getData(txn, key) shouldBe Nil
@@ -767,7 +768,7 @@ trait StorageActionsTests
 
       val r4 = space.produce(key.head, "datum2", persist = false)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getChannels(txn, keyHash) shouldBe List("ch1")
         space.store.getPatterns(txn, key) shouldBe List(List(Wildcard))
         space.store.getData(txn, key) shouldBe Nil
@@ -791,7 +792,7 @@ trait StorageActionsTests
     space =>
       val r1 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = true)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getData(txn, List("ch1")) shouldBe Nil
         space.store.getWaitingContinuation(txn, List("ch1")) should not be empty
       }
@@ -800,7 +801,7 @@ trait StorageActionsTests
 
       val r2 = space.produce("ch1", "datum1", persist = false)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getData(txn, List("ch1")) shouldBe Nil
         space.store.getWaitingContinuation(txn, List("ch1")) should not be empty
       }
@@ -813,7 +814,7 @@ trait StorageActionsTests
 
       val r3 = space.produce("ch1", "datum2", persist = false)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getData(txn, List("ch1")) shouldBe Nil
         space.store.getWaitingContinuation(txn, List("ch1")) should not be empty
       }
@@ -852,7 +853,7 @@ trait StorageActionsTests
 
     r3 shouldBe None
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", true))
       space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
     }
@@ -884,7 +885,7 @@ trait StorageActionsTests
       // All matching continuations have been produced, so the write will "stick"
       val r3 = space.produce("ch1", "datum1", persist = true)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", true))
         space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
       }
@@ -893,7 +894,7 @@ trait StorageActionsTests
 
       val r4 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = false)
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", true))
         space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
       }
@@ -914,7 +915,7 @@ trait StorageActionsTests
   "doing a persistent produce and consuming twice" should "work" in withTestSpace { space =>
     val r1 = space.produce("ch1", "datum1", persist = true)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", true))
       space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
     }
@@ -923,7 +924,7 @@ trait StorageActionsTests
 
     val r2 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", true))
       space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
     }
@@ -936,7 +937,7 @@ trait StorageActionsTests
 
     val r3 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = false)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) shouldBe List(Datum.create("ch1", "datum1", true))
       space.store.getWaitingContinuation(txn, List("ch1")) shouldBe Nil
     }
@@ -966,7 +967,7 @@ trait StorageActionsTests
     // Matching data exists so the write will not "stick"
     val r4 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = true)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) should contain atLeastOneOf (
         Datum.create("ch1", "datum1", false),
         Datum.create("ch1", "datum2", false),
@@ -984,7 +985,7 @@ trait StorageActionsTests
     // Matching data exists so the write will not "stick"
     val r5 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = true)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) should contain oneOf (
         Datum.create("ch1", "datum1", false),
         Datum.create("ch1", "datum2", false),
@@ -1013,7 +1014,7 @@ trait StorageActionsTests
     // All matching data has been consumed, so the write will "stick"
     val r7 = space.consume(List("ch1"), List(Wildcard), new StringsCaptor, persist = true)
 
-    space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+    space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
       space.store.getData(txn, List("ch1")) shouldBe Nil
       space.store.getWaitingContinuation(txn, List("ch1")) should not be empty
     }
@@ -1112,7 +1113,8 @@ trait StorageActionsTests
 
   "consume then createCheckpoint" should "return the expected hash and the TrieStore should contain the expected value" in
     withTestSpace { space =>
-      val channels = List("ch1")
+      implicit val txnal = space.trieTransactional
+      val channels       = List("ch1")
       val gnat = GNAT(
         channels,
         List.empty[Datum[String]],
@@ -1147,6 +1149,7 @@ trait StorageActionsTests
 
   "consume twice then createCheckpoint" should "persist the expected values in the TrieStore" in
     withTestSpace { space =>
+      implicit val txnal = space.trieTransactional
       val gnat1 = {
         val channels = List("ch1")
         GNAT(channels,
@@ -1210,7 +1213,8 @@ trait StorageActionsTests
             space.produce(channel, datum.a, datum.persist)
         }
 
-        val channelHashes = gnats.map(gnat => space.store.hashChannels(gnat.channels))
+        implicit val txnal = space.trieTransactional
+        val channelHashes  = gnats.map(gnat => space.store.hashChannels(gnat.channels))
 
         history.lookup(space.store.trieStore, space.store.trieBranch, channelHashes) shouldBe None
 
@@ -1236,7 +1240,8 @@ trait StorageActionsTests
             space.consume(channels, wk.patterns, wk.continuation, wk.persist)
         }
 
-        val channelHashes = gnats.map(gnat => space.store.hashChannels(gnat.channels))
+        implicit val txnal = space.trieTransactional
+        val channelHashes  = gnats.map(gnat => space.store.hashChannels(gnat.channels))
 
         history.lookup(space.store.trieStore, space.store.trieBranch, channelHashes) shouldBe None
 
@@ -1253,7 +1258,8 @@ trait StorageActionsTests
       val channels     = List("ch1")
       val channelsHash = space.store.hashChannels(channels)
 
-      val r1 = space.consume(channels, List(Wildcard), new StringsCaptor, persist = false)
+      implicit val txnal = space.trieTransactional
+      val r1             = space.consume(channels, List(Wildcard), new StringsCaptor, persist = false)
 
       r1 shouldBe None
 
@@ -1273,6 +1279,7 @@ trait StorageActionsTests
     withTestSpace { space =>
       val root0 = space.createCheckpoint().root
 
+      implicit val txnal = space.trieTransactional
       val gnat1 = {
         val channels = List("ch1")
         GNAT(channels,
@@ -1308,6 +1315,7 @@ trait StorageActionsTests
     space =>
       val root0 = space.createCheckpoint().root
 
+      implicit val txnal = space.trieTransactional
       val gnat1 = {
         val channels = List("ch1", "ch2")
         GNAT(channels,
@@ -1328,7 +1336,7 @@ trait StorageActionsTests
 
       space.store.isEmpty shouldBe false
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getJoin(txn, "ch1") shouldBe List(List("ch1", "ch2"))
         space.store.getJoin(txn, "ch2") shouldBe List(List("ch1", "ch2"))
       }
@@ -1339,7 +1347,7 @@ trait StorageActionsTests
 
       space.store.isEmpty shouldBe true
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getJoin(txn, "ch1") shouldBe Nil
         space.store.getJoin(txn, "ch2") shouldBe Nil
       }
@@ -1350,7 +1358,7 @@ trait StorageActionsTests
 
       space.store.isEmpty shouldBe false
 
-      space.transactional.withTxn(space.transactional.createTxnRead()) { txn =>
+      space.storeTransactional.withTxn(space.storeTransactional.createTxnRead()) { txn =>
         space.store.getJoin(txn, "ch1") shouldBe List(List("ch1", "ch2"))
         space.store.getJoin(txn, "ch2") shouldBe List(List("ch1", "ch2"))
       }
@@ -1362,6 +1370,7 @@ trait StorageActionsTests
     "have the expected contents" in {
     val prop = Prop.forAllNoShrink { (data: Seq[TestProduceMap]) =>
       withTestSpace { space =>
+        implicit val txnal = space.trieTransactional
         logger.debug(s"Test: ${data.length} stages")
 
         val states = data.zipWithIndex.map {
@@ -1386,6 +1395,7 @@ trait StorageActionsTests
     "have the expected contents" in {
     val prop = Prop.forAllNoShrink { (data: Seq[TestConsumeMap]) =>
       withTestSpace { space =>
+        implicit val txnal = space.trieTransactional
         logger.debug(s"Test: ${data.length} stages")
 
         val states = data.zipWithIndex.map {
@@ -1410,6 +1420,7 @@ trait StorageActionsTests
     "have the expected contents" in {
     val prop = Prop.forAllNoShrink { (data: Seq[(TestConsumeMap, TestProduceMap)]) =>
       withTestSpace { space =>
+        implicit val txnal = space.trieTransactional
         logger.debug(s"Test: ${data.length} stages")
 
         val states = data.zipWithIndex.map {
@@ -1440,6 +1451,8 @@ trait StorageActionsTests
     val patterns = List[Pattern](Wildcard, Wildcard)
     val k        = new StringsCaptor
     val data     = List("datum1", "datum2")
+
+    implicit val txnal = space.trieTransactional
 
     space.consume(channels, patterns, k, false)
 

@@ -8,13 +8,7 @@ import coop.rchain.rspace.Blake2b256Hash
 import scala.annotation.tailrec
 import scala.collection.immutable.Seq
 
-trait ITrieStore[T, K, V] {
-
-  private[rspace] def createTxnRead(): T
-
-  private[rspace] def createTxnWrite(): T
-
-  private[rspace] def withTxn[R](txn: T)(f: T => R): R
+trait ITrieStore[F[_], T, K, V] {
 
   private[rspace] def getRoot(txn: T, branch: Branch): Option[Blake2b256Hash]
 
@@ -28,7 +22,7 @@ trait ITrieStore[T, K, V] {
 
   private[rspace] def get(txn: T, key: Blake2b256Hash): Option[Trie[K, V]]
 
-  private[rspace] def toMap: Map[Blake2b256Hash, Trie[K, V]]
+  private[rspace] def toMap: F[Map[Blake2b256Hash, Trie[K, V]]]
 
   private[rspace] def getLeaves(txn: T, hash: Blake2b256Hash): Seq[Leaf[K, V]] = {
     @tailrec

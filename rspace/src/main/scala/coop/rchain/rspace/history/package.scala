@@ -2,12 +2,15 @@ package coop.rchain.rspace
 
 import java.lang.{Byte => JByte}
 
-import cats.Eq
+import cats.{Applicative, Eq, Monad}
 import cats.instances.byte._
 import cats.instances.option._
 import cats.syntax.eq._
 import cats.syntax.traverse._
+import cats.syntax.applicative._
+import cats._
 import com.typesafe.scalalogging.Logger
+import coop.rchain.catscontrib.Capture
 import coop.rchain.catscontrib.seq._
 import coop.rchain.shared.AttemptOps._
 import scodec.Codec
@@ -34,10 +37,12 @@ package object history {
 
   private val logger: Logger = Logger[this.type]
 
-  def initialize[T, K, V](store: ITrieStore[T, K, V], branch: Branch)(implicit
-                                                                      codecK: Codec[K],
-                                                                      codecV: Codec[V]): Unit =
-    store.withTxn(store.createTxnWrite()) { txn =>
+  def initialize[F[_]: Applicative, T, K, V](store: ITrieStore[F, T, K, V], branch: Branch)(
+      implicit
+      codecK: Codec[K],
+      codecV: Codec[V],
+      txnal: Transactional[F, T]): F[Unit] =
+    txnal.withTxn(txnal.createTxnWrite()) { txn =>
       store.getRoot(txn, branch) match {
         case None =>
           val root     = Trie.create[K, V]()
@@ -45,13 +50,15 @@ package object history {
           store.put(txn, rootHash, root)
           store.putRoot(txn, branch, rootHash)
           logger.debug(s"workingRootHash: $rootHash")
+          ().pure[F]
         case Some(_) =>
-          ()
+          ().pure[F]
       }
     }
 
-  def lookup[T, K, V](store: ITrieStore[T, K, V], branch: Branch, key: K)(
-      implicit codecK: Codec[K]): Option[V] = {
+  def lookup[F[_]: Capture, T, K, V](store: ITrieStore[F, T, K, V], branch: Branch, key: K)(
+      implicit codecK: Codec[K],
+      txnal: Transactional[F, T]): F[Option[V]] = {
     val path = codecK.encode(key).map(_.bytes.toSeq).get
 
     @tailrec
@@ -82,23 +89,32 @@ package object history {
           None
       }
 
-    store.withTxn(store.createTxnRead()) { (txn: T) =>
-      for {
-        currentRootHash <- store.getRoot(txn, branch)
-        currentRoot     <- store.get(txn, currentRootHash)
-        res             <- loop(txn, 0, currentRoot)
-      } yield res
-    }
+    txnal
+      .withTxn(txnal.createTxnRead()) { (txn: T) =>
+        Capture[F].capture {
+          for {
+            currentRootHash <- store.getRoot(txn, branch)
+            currentRoot     <- store.get(txn, currentRootHash)
+            res             <- loop(txn, 0, currentRoot)
+          } yield res
+        }
+      }
+
   }
 
-  def lookup[T, K, V](store: ITrieStore[T, K, V], branch: Branch, keys: immutable.Seq[K])(
-      implicit codecK: Codec[K]): Option[immutable.Seq[V]] =
-    keys.traverse[Option, V]((k: K) => lookup(store, branch, k))
+  def lookup[F[_]: Capture: Applicative, T, K, V](store: ITrieStore[F, T, K, V],
+                                                  branch: Branch,
+                                                  keys: immutable.Seq[K])(
+      implicit codecK: Codec[K],
+      txnal: Transactional[F, T]): F[Option[immutable.Seq[V]]] = {
+    val maybeVs: F[immutable.Seq[Option[V]]] = keys.traverse((k: K) => lookup(store, branch, k))
+    Applicative[F].map(maybeVs)(s => s.traverse(i => i))
+  }
 
-  private[this] def getParents[T, K, V](store: ITrieStore[T, K, V],
-                                        txn: T,
-                                        path: Seq[Byte],
-                                        curr: Trie[K, V]): (Trie[K, V], Parents[K, V]) = {
+  private[this] def getParents[F[_], T, K, V](store: ITrieStore[F, T, K, V],
+                                              txn: T,
+                                              path: Seq[Byte],
+                                              curr: Trie[K, V]): (Trie[K, V], Parents[K, V]) = {
 
     @tailrec
     def parents(depth: Int, curr: Trie[K, V], acc: Parents[K, V]): (Trie[K, V], Parents[K, V]) =
@@ -154,68 +170,73 @@ package object history {
         (Trie.hash[K, V](node), node)
     }
 
-  def insert[T, K, V](store: ITrieStore[T, K, V], branch: Branch, key: K, value: V)(
-      implicit
-      codecK: Codec[K],
-      codecV: Codec[V]): Unit =
-    store.withTxn(store.createTxnWrite()) { (txn: T) =>
-      // Get the current root hash
-      val currentRootHash: Blake2b256Hash =
-        store.getRoot(txn, branch).getOrElse(throw new InsertException("could not get root"))
-      // Get the current root node
-      store.get(txn, currentRootHash) match {
-        case None =>
-          throw new LookupException(s"No node at $currentRootHash")
-        case Some(currentRoot) =>
-          // Serialize and convert the key to a `Seq[Byte]`.  This becomes our "path" down the Trie.
-          val encodedKeyNew        = codecK.encode(key).map(_.bytes.toSeq).get
-          val encodedKeyByteVector = ByteVector(encodedKeyNew)
-          // Create the new leaf and put it into the store
-          val newLeaf     = Leaf(key, value)
-          val newLeafHash = Trie.hash(newLeaf)
-          store.put(txn, newLeafHash, newLeaf)
-          // Using the path we created from the key, get the existing parents of the new leaf.
-          val (tip, parents) = getParents(store, txn, encodedKeyNew, currentRoot)
-          val maybeNewNodes: Option[Seq[(Blake2b256Hash, Trie[K, V])]] = tip match {
-            // If the "tip" is the same as the new leaf, then the given (key, value) pair is
-            // already in the Trie, so we put the rootHash back and continue
-            case existingLeaf @ Leaf(_, _) if existingLeaf == newLeaf =>
-              logger.debug(s"workingRootHash: $currentRootHash")
-              None
-            // If the "tip" is an existing leaf with a different key than the new leaf, then
-            // we are in a situation where the new leaf shares some common prefix with the
-            // existing leaf.
-            // post skip note: due to the nature of skip nodes, this case is not possible
-            // with the current implementation of getParents
-            case Leaf(ek, _) if key != ek =>
-              throw new InsertException("Trie parents tip should not hold a leaf.")
-            // If the "tip" is an existing leaf with the same key as the new leaf, but the
-            // existing leaf and new leaf have different values, then we are in the situation
-            // where we are "updating" an existing leaf
-            case Leaf(ek, ev) if key == ek && value != ev =>
-              // Update the pointer block of the immediate parent at the given index
-              // to point to the new leaf instead of the existing leaf
-              Some(updateLeaf(newLeafHash, parents))
-            // If the "tip" is an existing node, then we can add the new leaf's hash to the node's
-            // pointer block and rehash.
-            case Node(pb) =>
-              Some(insertLeafAsNodeChild(encodedKeyByteVector, newLeafHash, parents, pb))
-            // If the tip is a skip node -> there is no Node in the Trie for this Leaf.
-            // need to:
-            // - shorten (a new skip that holds the common path)
-            // - remove (no new skip, just the new trie)
-            // and rectify the structure
-            case Skip(affix, ptr) =>
-              Some(insertLeafOntoSkipNode(encodedKeyByteVector, newLeafHash, parents, affix, ptr))
-          }
-          maybeNewNodes match {
-            case Some(nodes) =>
-              val newRootHash = insertTries(store, txn, nodes).get
-              store.putRoot(txn, branch, newRootHash)
-              logger.debug(s"workingRootHash: $newRootHash")
-            case None =>
-              logger.debug(s"insert did not change the trie")
-          }
+  def insert[F[_]: Capture, T, K, V](store: ITrieStore[F, T, K, V],
+                                     branch: Branch,
+                                     key: K,
+                                     value: V)(implicit
+                                               codecK: Codec[K],
+                                               codecV: Codec[V],
+                                               txnal: Transactional[F, T]): F[Unit] =
+    txnal.withTxn(txnal.createTxnWrite()) { (txn: T) =>
+      Capture[F].capture {
+        // Get the current root hash
+        val currentRootHash: Blake2b256Hash =
+          store.getRoot(txn, branch).getOrElse(throw new InsertException("could not get root"))
+        // Get the current root node
+        store.get(txn, currentRootHash) match {
+          case None =>
+            throw new LookupException(s"No node at $currentRootHash")
+          case Some(currentRoot) =>
+            // Serialize and convert the key to a `Seq[Byte]`.  This becomes our "path" down the Trie.
+            val encodedKeyNew        = codecK.encode(key).map(_.bytes.toSeq).get
+            val encodedKeyByteVector = ByteVector(encodedKeyNew)
+            // Create the new leaf and put it into the store
+            val newLeaf     = Leaf(key, value)
+            val newLeafHash = Trie.hash(newLeaf)
+            store.put(txn, newLeafHash, newLeaf)
+            // Using the path we created from the key, get the existing parents of the new leaf.
+            val (tip, parents) = getParents(store, txn, encodedKeyNew, currentRoot)
+            val maybeNewNodes: Option[Seq[(Blake2b256Hash, Trie[K, V])]] = tip match {
+              // If the "tip" is the same as the new leaf, then the given (key, value) pair is
+              // already in the Trie, so we put the rootHash back and continue
+              case existingLeaf @ Leaf(_, _) if existingLeaf == newLeaf =>
+                logger.debug(s"workingRootHash: $currentRootHash")
+                None
+              // If the "tip" is an existing leaf with a different key than the new leaf, then
+              // we are in a situation where the new leaf shares some common prefix with the
+              // existing leaf.
+              // post skip note: due to the nature of skip nodes, this case is not possible
+              // with the current implementation of getParents
+              case Leaf(ek, _) if key != ek =>
+                throw new InsertException("Trie parents tip should not hold a leaf.")
+              // If the "tip" is an existing leaf with the same key as the new leaf, but the
+              // existing leaf and new leaf have different values, then we are in the situation
+              // where we are "updating" an existing leaf
+              case Leaf(ek, ev) if key == ek && value != ev =>
+                // Update the pointer block of the immediate parent at the given index
+                // to point to the new leaf instead of the existing leaf
+                Some(updateLeaf(newLeafHash, parents))
+              // If the "tip" is an existing node, then we can add the new leaf's hash to the node's
+              // pointer block and rehash.
+              case Node(pb) =>
+                Some(insertLeafAsNodeChild(encodedKeyByteVector, newLeafHash, parents, pb))
+              // If the tip is a skip node -> there is no Node in the Trie for this Leaf.
+              // need to:
+              // - shorten (a new skip that holds the common path)
+              // - remove (no new skip, just the new trie)
+              // and rectify the structure
+              case Skip(affix, ptr) =>
+                Some(insertLeafOntoSkipNode(encodedKeyByteVector, newLeafHash, parents, affix, ptr))
+            }
+            maybeNewNodes match {
+              case Some(nodes) =>
+                val newRootHash = insertTries(store, txn, nodes).get
+                store.putRoot(txn, branch, newRootHash)
+                logger.debug(s"workingRootHash: $newRootHash")
+              case None =>
+                logger.debug(s"insert did not change the trie")
+            }
+        }
       }
     }
 
@@ -343,8 +364,8 @@ package object history {
       (ptr, Seq.empty)
     }
 
-  private[this] def insertTries[T, K, V](
-      store: ITrieStore[T, K, V],
+  private[this] def insertTries[F[_], T, K, V](
+      store: ITrieStore[F, T, K, V],
       txn: T,
       rehashedNodes: Seq[(Blake2b256Hash, Trie[K, V])]): Option[Blake2b256Hash] =
     rehashedNodes.foldLeft(None: Option[Blake2b256Hash]) {
@@ -354,7 +375,9 @@ package object history {
     }
 
   @tailrec
-  private[this] def deleteLeaf[T, K, V](store: ITrieStore[T, K, V], txn: T, parents: Parents[K, V])(
+  private[this] def deleteLeaf[F[_], T, K, V](store: ITrieStore[F, T, K, V],
+                                              txn: T,
+                                              parents: Parents[K, V])(
       implicit
       codecK: Codec[K],
       codecV: Codec[V]): (Trie[K, V], Parents[K, V], Seq[(Blake2b256Hash, Trie[K, V])]) =
@@ -406,44 +429,49 @@ package object history {
         }
     }
 
-  def delete[T, K, V](store: ITrieStore[T, K, V], branch: Branch, key: K, value: V)(
-      implicit
-      codecK: Codec[K],
-      codecV: Codec[V]): Boolean =
-    store.withTxn(store.createTxnWrite()) { (txn: T) =>
-      // We take the current root hash, preventing other threads from operating on the Trie
-      val currentRootHash: Blake2b256Hash =
-        store.getRoot(txn, branch).getOrElse(throw new InsertException("could not get root"))
-      // Get the current root node
-      store.get(txn, currentRootHash) match {
-        case None =>
-          throw new LookupException(s"No node at $currentRootHash")
-        case Some(currentRoot) =>
-          // Serialize and convert the key to a `Seq[Byte]`.  This becomes our "path" down the Trie.
-          val encodedKey = codecK.encode(key).map(_.bytes.toSeq).get
-          // Using this path, get the parents of the given leaf.
-          val (tip, parents) = getParents(store, txn, encodedKey, currentRoot)
-          tip match {
-            // If the "tip" is a node, a leaf with a given key and value does not exist
-            // so we put the current root hash back and return false.
-            case Node(_) =>
-              logger.debug(s"workingRootHash: $currentRootHash")
-              false
-            // If the "tip" is equal to a leaf containing the given key and value, commence
-            // with the deletion process.
-            case leaf @ Leaf(_, _) if leaf == Leaf(key, value) =>
-              val (hd, nodesToRehash, newNodes) = deleteLeaf(store, txn, parents)
-              val rehashedNodes                 = rehash[K, V](hd, nodesToRehash)
-              val nodesToInsert                 = newNodes ++ rehashedNodes
-              val newRootHash                   = insertTries[T, K, V](store, txn, nodesToInsert).get
-              store.putRoot(txn, branch, newRootHash)
-              logger.debug(s"workingRootHash: $newRootHash")
-              true
-            // The entry is not in the trie
-            case Leaf(_, _) =>
-              logger.debug(s"workingRootHash: $currentRootHash")
-              false
-          }
+  def delete[F[_]: Capture, T, K, V](store: ITrieStore[F, T, K, V],
+                                     branch: Branch,
+                                     key: K,
+                                     value: V)(implicit
+                                               codecK: Codec[K],
+                                               codecV: Codec[V],
+                                               txnal: Transactional[F, T]): F[Boolean] =
+    txnal.withTxn(txnal.createTxnWrite()) { (txn: T) =>
+      Capture[F].capture {
+        // We take the current root hash, preventing other threads from operating on the Trie
+        val currentRootHash: Blake2b256Hash =
+          store.getRoot(txn, branch).getOrElse(throw new InsertException("could not get root"))
+        // Get the current root node
+        store.get(txn, currentRootHash) match {
+          case None =>
+            throw new LookupException(s"No node at $currentRootHash")
+          case Some(currentRoot) =>
+            // Serialize and convert the key to a `Seq[Byte]`.  This becomes our "path" down the Trie.
+            val encodedKey = codecK.encode(key).map(_.bytes.toSeq).get
+            // Using this path, get the parents of the given leaf.
+            val (tip, parents) = getParents(store, txn, encodedKey, currentRoot)
+            tip match {
+              // If the "tip" is a node, a leaf with a given key and value does not exist
+              // so we put the current root hash back and return false.
+              case Node(_) =>
+                logger.debug(s"workingRootHash: $currentRootHash")
+                false
+              // If the "tip" is equal to a leaf containing the given key and value, commence
+              // with the deletion process.
+              case leaf @ Leaf(_, _) if leaf == Leaf(key, value) =>
+                val (hd, nodesToRehash, newNodes) = deleteLeaf(store, txn, parents)
+                val rehashedNodes                 = rehash[K, V](hd, nodesToRehash)
+                val nodesToInsert                 = newNodes ++ rehashedNodes
+                val newRootHash                   = insertTries[F, T, K, V](store, txn, nodesToInsert).get
+                store.putRoot(txn, branch, newRootHash)
+                logger.debug(s"workingRootHash: $newRootHash")
+                true
+              // The entry is not in the trie
+              case Leaf(_, _) =>
+                logger.debug(s"workingRootHash: $currentRootHash")
+                false
+            }
+        }
       }
     }
 

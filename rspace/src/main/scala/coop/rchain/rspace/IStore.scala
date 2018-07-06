@@ -2,6 +2,7 @@ package coop.rchain.rspace
 
 import java.util.concurrent.atomic.AtomicLong
 
+import coop.rchain.catscontrib.Capture
 import coop.rchain.rspace.history.{Branch, ITrieStore}
 import coop.rchain.rspace.internal._
 import coop.rchain.shared.SyncVarOps
@@ -17,6 +18,9 @@ import scala.concurrent.SyncVar
   * @tparam K a type representing a continuation
   */
 trait IStore[F[_], C, P, A, K] {
+
+  val trieTransactional: Transactional[F, TT]
+  val capture: Capture[F]
 
   /**
     * The type of transactions
@@ -64,7 +68,7 @@ trait IStore[F[_], C, P, A, K] {
 
   def getStoreCounters: StoreCounters
 
-  val trieStore: ITrieStore[TT, Blake2b256Hash, GNAT[C, P, A, K]]
+  val trieStore: ITrieStore[F, TT, Blake2b256Hash, GNAT[C, P, A, K]]
 
   val trieBranch: Branch
 
@@ -89,15 +93,17 @@ trait IStore[F[_], C, P, A, K] {
 
   protected def processTrieUpdate: PartialFunction[TrieUpdate[C, P, A, K], Unit]
 
-  def createCheckpoint(): Blake2b256Hash = {
+  def createCheckpoint(): F[Blake2b256Hash] = {
     val trieUpdates = _trieUpdates.take
     _trieUpdates.put(Seq.empty)
     _trieUpdateCount.set(0L)
     collapse(trieUpdates).foreach(processTrieUpdate)
-    trieStore.withTxn(trieStore.createTxnWrite()) { txn => // huh
-      trieStore
-        .persistAndGetRoot(txn, trieBranch)
-        .getOrElse(throw new Exception("Could not get root hash"))
+    trieTransactional.withTxn(trieTransactional.createTxnWrite()) { txn =>
+      capture.capture {
+        trieStore
+          .persistAndGetRoot(txn, trieBranch)
+          .getOrElse(throw new Exception("Could not get root hash"))
+      }
     }
   }
 
@@ -123,7 +129,8 @@ trait IStore[F[_], C, P, A, K] {
 }
 
 object IStore {
-  type AUX[F[_], C, P, A, K, TXN] = IStore[F, C, P, A, K] {
-    type T = TXN
+  type AUX[F[_], C, P, A, K, TXN, TRIETXN] = IStore[F, C, P, A, K] {
+    type T  = TXN
+    type TT = TRIETXN
   }
 }

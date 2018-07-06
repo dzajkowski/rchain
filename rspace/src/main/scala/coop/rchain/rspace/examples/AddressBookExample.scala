@@ -170,16 +170,23 @@ object AddressBookExample {
     // Here we define a temporary place to put the store's files
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
-    val context = Context.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val env = Context.env(storePath, 1024L * 1024L)
+
+    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+      Transactional.lmdbCombined(env)
 
     implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
-      Transactional.lmdbTransactional(context.env)
+      Transactional.lmdbTransactional(env)
+
+    val context = Context.create[Id, Channel, Pattern, Entry, Printer](env, storePath)
     // Let's define our store
     val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
       LMDBStore.create[Id, Channel, Pattern, Entry, Printer](context, Branch.MASTER)
 
     val space =
-      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]](store, Branch.MASTER)
+      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer], Txn[ByteBuffer]](
+        store,
+        Branch.MASTER)
 
     Console.printf("\nExample One: Let's consume and then produce...\n")
 
@@ -209,16 +216,23 @@ object AddressBookExample {
     // Here we define a temporary place to put the store's files
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
-    val context = Context.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val env = Context.env(storePath, 1024L * 1024L)
+    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+      Transactional.lmdbCombined(env)
+
     implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
-      Transactional.lmdbTransactional(context.env)
+      Transactional.lmdbTransactional(env)
+
+    val context = Context.create[Id, Channel, Pattern, Entry, Printer](env, storePath)
 
     // Let's define our store
     val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
       LMDBStore.create[Id, Channel, Pattern, Entry, Printer](context, Branch.MASTER)
 
     val space =
-      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]](store, Branch.MASTER)
+      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer], Txn[ByteBuffer]](
+        store,
+        Branch.MASTER)
 
     Console.printf("\nExample Two: Let's produce and then consume...\n")
 
@@ -290,18 +304,29 @@ object AddressBookExample {
     space.store.close()
   }
 
-  private[this] def withSpace(
-      f: RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]] => Unit) = {
+  private[this] def withSpace(f: RSpace[Channel,
+                                        Pattern,
+                                        Entry,
+                                        Entry,
+                                        Printer,
+                                        Txn[ByteBuffer],
+                                        Txn[ByteBuffer]] => Unit) = {
     // Here we define a temporary place to put the store's files
     val storePath = Files.createTempDirectory("rspace-address-book-example-")
-    val context   = Context.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val env       = Context.env(storePath, 1024L * 1024L)
+
     implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
-      Transactional.lmdbTransactional(context.env)
-    val branch = Branch.MASTER
+      Transactional.lmdbTransactional(env)
+    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+      Transactional.lmdbCombined(env)
+    val context = Context.create[Id, Channel, Pattern, Entry, Printer](env, storePath)
+    val branch  = Branch.MASTER
     // Let's define our store
     val store = LMDBStore.create[Id, Channel, Pattern, Entry, Printer](context, branch)
 
-    f(new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]](store, branch))
+    f(
+      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer], Txn[ByteBuffer]](store,
+                                                                                            branch))
   }
 
 }

@@ -3,7 +3,7 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.{Files, Path}
 
-import cats.{Id, Monad}
+import cats.{Id}
 import coop.rchain.rspace.examples.AddressBookExample._
 import coop.rchain.rspace.examples.AddressBookExample.implicits._
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, LMDBTrieStore}
@@ -12,7 +12,6 @@ import coop.rchain.rspace.internal.codecGNAT
 import coop.rchain.rspace.util._
 import coop.rchain.catscontrib._
 import coop.rchain.rspace.test.{InMemoryStore, State, Transaction}
-import monix.eval.Task
 import org.lmdbjava.{Env, EnvFlags, Txn}
 import org.scalatest.BeforeAndAfterAll
 import scodec.Codec
@@ -369,7 +368,8 @@ class InMemoryStoreStorageExamplesTestsBase
     val testStore = InMemoryStore.create[Channel, Pattern, Entry, EntriesCaptor](trieStore, branch)
     val testSpace =
       new RSpace[Channel, Pattern, Entry, Entry, EntriesCaptor, InMemTxn](testStore, Branch.MASTER)
-    testSpace.transactional.withTxn(testSpace.transactional.createTxnWrite())(testStore.clear)
+    testSpace.storeTransactional.withTxn(testSpace.storeTransactional.createTxnWrite())(
+      testStore.clear)
     trieStore.withTxn(trieStore.createTxnWrite())(trieStore.clear)
     initialize(trieStore, branch)
     try {
@@ -399,17 +399,19 @@ class LMDBStoreStorageExamplesTestBase
   def noTls: Boolean = false
 
   override def withTestSpace[R](f: T => R): R = {
-    val context: Context[Channel, Pattern, Entry, EntriesCaptor] =
-      Context.create(dbDir, mapSize, noTls)
+    val env = Context.env(dbDir, mapSize, noTls)
+    val context: Context[Id, Channel, Pattern, Entry, EntriesCaptor] =
+      Context.create(env, dbDir)
     implicit val transactional: Transactional[Id, Txn[ByteBuffer]] =
-      Transactional.lmdbTransactional(context.env)
+      Transactional.lmdbTransactional(env)
     val testStore =
       LMDBStore.create[Id, Channel, Pattern, Entry, EntriesCaptor](context, Branch.MASTER)
     val testSpace =
-      new RSpace[Channel, Pattern, Entry, Entry, EntriesCaptor, Txn[ByteBuffer]](testStore,
-                                                                                 Branch.MASTER)
+      new RSpace[Channel, Pattern, Entry, Entry, EntriesCaptor, Txn[ByteBuffer], Txn[ByteBuffer]](
+        testStore,
+        Branch.MASTER)
     try {
-      testSpace.transactional.withTxn(testSpace.transactional.createTxnWrite())(txn =>
+      testSpace.storeTransactional.withTxn(testSpace.storeTransactional.createTxnWrite())(txn =>
         testStore.clear(txn))
       f(testSpace)
     } finally {
