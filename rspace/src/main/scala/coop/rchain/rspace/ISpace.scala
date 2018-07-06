@@ -2,8 +2,8 @@ package coop.rchain.rspace
 
 import cats.Id
 import cats.implicits._
-import coop.rchain.rspace.history.{Branch, Leaf}
 import coop.rchain.catscontrib._
+import coop.rchain.rspace.history.{Branch, Leaf}
 import coop.rchain.rspace.internal._
 
 import scala.annotation.tailrec
@@ -26,6 +26,8 @@ trait ISpace[C, P, A, R, K] {
   val store: IStore[Id, C, P, A, K]
 
   val branch: Branch
+
+  val transactional: Transactional[Id, store.T]
 
   /* Consume */
 
@@ -57,12 +59,12 @@ trait ISpace[C, P, A, R, K] {
     }
 
   def getData(channel: C): Seq[Datum[A]] =
-    store.withTxn(store.createTxnRead()) { txn =>
+    transactional.withTxn(transactional.createTxnRead()) { txn =>
       store.getData(txn, Seq(channel))
     }
 
   def getWaitingContinuations(channels: Seq[C]): Seq[WaitingContinuation[P, K]] =
-    store.withTxn(store.createTxnRead()) { txn =>
+    transactional.withTxn(transactional.createTxnRead()) { txn =>
       store.getWaitingContinuation(txn, channels)
     }
 
@@ -187,7 +189,7 @@ trait ISpace[C, P, A, R, K] {
     * @param root A BLAKE2b256 Hash representing the checkpoint
     */
   def reset(root: Blake2b256Hash): Unit =
-    store.withTxn(store.createTxnWrite()) { txn =>
+    transactional.withTxn(transactional.createTxnWrite()) { txn =>
       store.withTrieTxn(txn) { trieTxn =>
         store.trieStore.validateAndPutRoot(trieTxn, store.trieBranch, root)
         val leaves = store.trieStore.getLeaves(trieTxn, root)

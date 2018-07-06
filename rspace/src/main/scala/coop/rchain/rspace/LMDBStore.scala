@@ -4,8 +4,11 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 
 import cats.Monad
-import cats._, cats.data._, cats.implicits._
+import cats._
+import cats.data._
+import cats.implicits._
 import coop.rchain.catscontrib.Capture
+import coop.rchain.rspace.Transactional.LMDBTransactional
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, Leaf}
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.util.canonicalize
@@ -21,7 +24,6 @@ import scodec.bits._
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.Seq
-
 import scala.language.higherKinds
 
 /**
@@ -29,7 +31,7 @@ import scala.language.higherKinds
   *
   * To create an instance, use [[LMDBStore.create]].
   */
-class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
+class LMDBStore[F[_]: Capture: Monad: LMDBTransactional, C, P, A, K] private (
     env: Env[ByteBuffer],
     databasePath: Path,
     _dbGNATs: Dbi[ByteBuffer],
@@ -43,6 +45,8 @@ class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
   codecK: Codec[K])
     extends IStore[F, C, P, A, K] {
 
+//  import LMDBTransactional[F]._
+
   // Good luck trying to get this to resolve as an implicit
   val joinCodec: Codec[Seq[Seq[C]]] = codecSeq(codecSeq(codecC))
 
@@ -52,25 +56,6 @@ class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
   def withTrieTxn[R](txn: T)(f: TT => R): R = f(txn)
 
   val eventsCounter: StoreEventsCounter = new StoreEventsCounter()
-
-  private[rspace] def createTxnRead(): F[T] =
-    Capture[F].capture { env.txnRead }
-
-  private[rspace] def createTxnWrite(): F[T] =
-    Capture[F].capture { env.txnWrite }
-
-  private[rspace] def withTxn[R](txn: T)(f: T => R): R =
-    try {
-      val ret: R = f(txn)
-      txn.commit()
-      ret
-    } catch {
-      case ex: Throwable =>
-        txn.abort()
-        throw ex
-    } finally {
-      txn.close()
-    }
 
   /* Basic operations */
   private[this] def fetchGNAT(txn: T, channelsHash: Blake2b256Hash): Option[GNAT[C, P, A, K]] = {
@@ -246,15 +231,8 @@ class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
     }
   }
 
-  def withTxnF[R](t: F[T])(f: T => F[R]): F[R] =
-    t >>= ((_t: T) => {
-      withTxn(_t) { txn =>
-        f(txn)
-      }
-    })
-
   private[rspace] def joinMap: F[Map[Blake2b256Hash, Seq[Seq[C]]]] =
-    withTxnF(createTxnRead()) { txn =>
+    LMDBTransactional[F].withTxn(LMDBTransactional[F].createTxnRead()) { txn =>
       Capture[F].capture {
         withResource(_dbJoins.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
           it.asScala
@@ -283,7 +261,7 @@ class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
     eventsCounter.createCounters(databasePath.folderSize, env.stat().entries)
 
   def isEmpty: F[Boolean] =
-    withTxnF(createTxnRead()) { txn =>
+    LMDBTransactional[F].withTxn(LMDBTransactional[F].createTxnRead()) { txn =>
       Capture[F].capture {
         !_dbGNATs.iterate(txn).hasNext &&
         !_dbJoins.iterate(txn).hasNext
@@ -294,7 +272,7 @@ class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
     getWaitingContinuation(txn, channels).map(_.patterns)
 
   def toMap: F[Map[Seq[C], Row[P, A, K]]] =
-    withTxnF(createTxnRead()) { txn =>
+    LMDBTransactional[F].withTxn(LMDBTransactional[F].createTxnRead()) { txn =>
       Capture[F].capture {
         withResource(_dbGNATs.iterate(txn)) { (it: CursorIterator[ByteBuffer]) =>
           it.asScala.map { (x: CursorIterator.KeyVal[ByteBuffer]) =>
@@ -331,7 +309,8 @@ class LMDBStore[F[_]: Capture: Monad, C, P, A, K] private (
 
 object LMDBStore {
 
-  def create[F[_]: Capture: Monad, C, P, A, K](context: Context[C, P, A, K], branch: Branch)(
+  def create[F[_]: Capture: Monad: LMDBTransactional, C, P, A, K](context: Context[C, P, A, K],
+                                                                  branch: Branch)(
       implicit
       sc: Serialize[C],
       sp: Serialize[P],
@@ -351,29 +330,5 @@ object LMDBStore {
                                  dbJoins,
                                  context.trieStore,
                                  branch)
-  }
-
-  def create[F[_]: Capture: Monad, C, P, A, K](path: Path, mapSize: Long, noTls: Boolean = true)(
-      implicit sc: Serialize[C],
-      sp: Serialize[P],
-      sa: Serialize[A],
-      sk: Serialize[K]): LMDBStore[F, C, P, A, K] = {
-    implicit val codecC: Codec[C] = sc.toCodec
-    implicit val codecP: Codec[P] = sp.toCodec
-    implicit val codecA: Codec[A] = sa.toCodec
-    implicit val codecK: Codec[K] = sk.toCodec
-
-    val flags =
-      if (noTls)
-        List(EnvFlags.MDB_NOTLS)
-      else
-        List.empty[EnvFlags]
-
-    val env    = Context.create[C, P, A, K](path, mapSize, flags)
-    val branch = Branch.MASTER
-
-    initialize(env.trieStore, branch)
-
-    create(env, branch)
   }
 }

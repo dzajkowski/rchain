@@ -22,6 +22,20 @@ class Context[C, P, A, K] private (
 
 object Context {
 
+  def create[C, P, A, K](path: Path, mapSize: Long, noTls: Boolean)(
+      implicit
+      sc: Serialize[C],
+      sp: Serialize[P],
+      sa: Serialize[A],
+      sk: Serialize[K]): Context[C, P, A, K] = {
+    val flags =
+      if (noTls)
+        List(EnvFlags.MDB_NOTLS)
+      else
+        List.empty[EnvFlags]
+    create(path, mapSize, flags)
+  }
+
   def create[C, P, A, K](path: Path,
                          mapSize: Long,
                          flags: List[EnvFlags] = List(EnvFlags.MDB_NOTLS))(

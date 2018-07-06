@@ -1,6 +1,7 @@
 package coop.rchain.rspace.examples
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.nio.ByteBuffer
 import java.nio.file.{Files, Path}
 
 import cats.Id
@@ -9,6 +10,7 @@ import coop.rchain.rspace.history.Branch
 import coop.rchain.shared.Language.ignore
 import coop.rchain.rspace.util.runKs
 import coop.rchain.catscontrib._
+import org.lmdbjava.Txn
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.Seq
@@ -168,11 +170,16 @@ object AddressBookExample {
     // Here we define a temporary place to put the store's files
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
+    val context = Context.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+
+    implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
+      Transactional.lmdbTransactional(context.env)
     // Let's define our store
     val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
-      LMDBStore.create[Id, Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+      LMDBStore.create[Id, Channel, Pattern, Entry, Printer](context, Branch.MASTER)
 
-    val space = new RSpace[Channel, Pattern, Entry, Entry, Printer](store, Branch.MASTER)
+    val space =
+      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]](store, Branch.MASTER)
 
     Console.printf("\nExample One: Let's consume and then produce...\n")
 
@@ -202,11 +209,16 @@ object AddressBookExample {
     // Here we define a temporary place to put the store's files
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
+    val context = Context.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
+      Transactional.lmdbTransactional(context.env)
+
     // Let's define our store
     val store: LMDBStore[Id, Channel, Pattern, Entry, Printer] =
-      LMDBStore.create[Id, Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+      LMDBStore.create[Id, Channel, Pattern, Entry, Printer](context, Branch.MASTER)
 
-    val space = new RSpace[Channel, Pattern, Entry, Entry, Printer](store, Branch.MASTER)
+    val space =
+      new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]](store, Branch.MASTER)
 
     Console.printf("\nExample Two: Let's produce and then consume...\n")
 
@@ -278,13 +290,18 @@ object AddressBookExample {
     space.store.close()
   }
 
-  private[this] def withSpace(f: RSpace[Channel, Pattern, Entry, Entry, Printer] => Unit) = {
+  private[this] def withSpace(
+      f: RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]] => Unit) = {
     // Here we define a temporary place to put the store's files
     val storePath = Files.createTempDirectory("rspace-address-book-example-")
+    val context   = Context.create[Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
+      Transactional.lmdbTransactional(context.env)
+    val branch = Branch.MASTER
     // Let's define our store
-    val store = LMDBStore.create[Id, Channel, Pattern, Entry, Printer](storePath, 1024L * 1024L)
+    val store = LMDBStore.create[Id, Channel, Pattern, Entry, Printer](context, branch)
 
-    f(new RSpace[Channel, Pattern, Entry, Entry, Printer](store, Branch.MASTER))
+    f(new RSpace[Channel, Pattern, Entry, Entry, Printer, Txn[ByteBuffer]](store, branch))
   }
 
 }

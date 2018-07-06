@@ -1,5 +1,6 @@
 package coop.rchain.rspace
 
+import java.nio.ByteBuffer
 import java.nio.file.Files
 
 import com.google.common.collect.Multiset
@@ -8,6 +9,7 @@ import coop.rchain.rspace.examples.StringExamples._
 import coop.rchain.rspace.examples.StringExamples.implicits._
 import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.trace.{COMM, Consume, IOEvent, Produce}
+import org.lmdbjava.Txn
 import org.scalatest._
 
 import scala.Function.const
@@ -741,7 +743,8 @@ trait ReplayRSpaceTestsBase[C, P, A, K]
     super.withFixture(test)
   }
 
-  def withTestSpaces[S](f: (RSpace[C, P, A, A, K], ReplayRSpace[C, P, A, A, K]) => S)(
+  def withTestSpaces[S](f: (RSpace[C, P, A, A, K, Txn[ByteBuffer]],
+                            ReplayRSpace[C, P, A, A, K, Txn[ByteBuffer]]) => S)(
       implicit
       sc: Serialize[C],
       sp: Serialize[P],

@@ -15,6 +15,8 @@ import org.lmdbjava.{Env, EnvFlags, Txn}
 import org.scalatest._
 import scodec.Codec
 
+import scala.concurrent.SyncVar
+
 trait StorageTestsBase[C, P, A, K] extends FlatSpec with Matchers with OptionValues {
 
   type T = ISpace[C, P, A, A, K]
@@ -38,6 +40,67 @@ class InMemoryStoreTestsBase
   val dbDir: Path   = Files.createTempDirectory("rchain-storage-test-")
   val mapSize: Long = 1024L * 1024L * 4096L
 
+  type InMemTxn = Transaction[State[String, Pattern, String, StringsCaptor]]
+
+  type StateType = State[String, Pattern, String, StringsCaptor]
+
+  def inMemTxnX(stateRef: SyncVar[StateType]): Transactional[Id, InMemTxn] =
+    new Transactional[Id, InMemTxn] {
+
+      def createTxnRead(): Id[InMemTxn] = new Transaction[StateType] {
+        val name: String = "read-" + Thread.currentThread().getId
+
+        private[this] val state = stateRef.get
+
+        override def commit(): Unit = {}
+
+        override def abort(): Unit = {}
+
+        override def close(): Unit = {}
+
+        override def readState[R](f: StateType => R): R = f(state)
+
+        override def writeState[R](f: StateType => (StateType, R)): R =
+          throw new RuntimeException("read txn cannot write")
+      }
+
+      def createTxnWrite(): Id[InMemTxn] =
+        new Transaction[StateType] {
+          val name: String = "write-" + Thread.currentThread().getId
+
+          private[this] val initial = stateRef.take
+          private[this] var current = initial
+
+          override def commit(): Unit =
+            stateRef.put(current)
+
+          override def abort(): Unit = stateRef.put(initial)
+
+          override def close(): Unit = {}
+
+          override def readState[R](f: StateType => R): R = f(current)
+
+          override def writeState[R](f: StateType => (StateType, R)): R = {
+            val (newState, result) = f(current)
+            current = newState
+            result
+          }
+        }
+
+      def withTxn[R](txn: Id[InMemTxn])(f: InMemTxn => Id[R]): Id[R] =
+        try {
+          val ret: R = f(txn)
+          txn.commit()
+          ret
+        } catch {
+          case ex: Throwable =>
+            txn.abort()
+            throw ex
+        } finally {
+          txn.close()
+        }
+    }
+
   override def withTestSpace[S](f: T => S): S = {
     implicit val codecString: Codec[String]   = implicitly[Serialize[String]].toCodec
     implicit val codecP: Codec[Pattern]       = implicitly[Serialize[Pattern]].toCodec
@@ -52,14 +115,20 @@ class InMemoryStoreTestsBase
 
     val branch = Branch("inmem")
 
+    val stateRef = new SyncVar[StateType]
+    stateRef.put(State.empty)
+
+    implicit val inMemTxn: Transactional[Id, InMemTxn] = inMemTxnX(stateRef)
+
     val trieStore
       : ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[String, Pattern, String, StringsCaptor]] =
       LMDBTrieStore.create[Blake2b256Hash, GNAT[String, Pattern, String, StringsCaptor]](env)
 
-    val testStore = InMemoryStore.create[String, Pattern, String, StringsCaptor](trieStore, branch)
+    val testStore =
+      InMemoryStore.create[String, Pattern, String, StringsCaptor](trieStore, branch)
     val testSpace =
-      new RSpace[String, Pattern, String, String, StringsCaptor](testStore, branch)
-    testStore.withTxn(testStore.createTxnWrite())(testStore.clear)
+      new RSpace[String, Pattern, String, String, StringsCaptor, InMemTxn](testStore, branch)
+    testSpace.transactional.withTxn(testSpace.transactional.createTxnWrite())(testStore.clear)
     trieStore.withTxn(trieStore.createTxnWrite())(trieStore.clear)
     initialize(trieStore, branch)
     try {
@@ -88,13 +157,17 @@ class LMDBStoreTestsBase
     implicit val codecK: Codec[StringsCaptor] = implicitly[Serialize[StringsCaptor]].toCodec
 
     val testBranch = Branch("test")
-    val env = Context.create[String, Pattern, String, StringsCaptor](dbDir,
-                                                                     mapSize,
-                                                                     List(EnvFlags.MDB_NOTLS))
-    val testStore = LMDBStore.create[Id, String, Pattern, String, StringsCaptor](env, testBranch)
+    val context: Context[String, Pattern, String, StringsCaptor] = Context
+      .create[String, Pattern, String, StringsCaptor](dbDir, mapSize, List(EnvFlags.MDB_NOTLS))
+    implicit val transactional: Transactional[Id, Txn[ByteBuffer]] =
+      Transactional.lmdbTransactional(context.env)
+    val testStore =
+      LMDBStore.create[Id, String, Pattern, String, StringsCaptor](context, testBranch)
     val testSpace =
-      new RSpace[String, Pattern, String, String, StringsCaptor](testStore, testBranch)
-    testStore.withTxn(testStore.createTxnWrite()) { txn =>
+      new RSpace[String, Pattern, String, String, StringsCaptor, Txn[ByteBuffer]](testStore,
+                                                                                  testBranch)
+
+    testSpace.transactional.withTxn(testSpace.transactional.createTxnWrite()) { txn =>
       testStore.clear(txn)
       testStore.trieStore.clear(txn)
     }

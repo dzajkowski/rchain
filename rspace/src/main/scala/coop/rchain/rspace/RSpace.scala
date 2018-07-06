@@ -6,7 +6,7 @@ import cats.Id
 import cats.implicits._
 import com.typesafe.scalalogging.Logger
 import coop.rchain.catscontrib._
-import coop.rchain.rspace.history.{Branch, Leaf}
+import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.trace.{COMM, Consume, Log, Produce}
 import coop.rchain.shared.SyncVarOps._
@@ -18,15 +18,16 @@ import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
 import scala.util.Random
 
-class RSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branch)(
+class RSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN], val branch: Branch)(
     implicit
     serializeC: Serialize[C],
     serializeP: Serialize[P],
     serializeA: Serialize[A],
-    serializeK: Serialize[K]
+    serializeK: Serialize[K],
+    transactionalEv: Transactional[Id, TXN]
 ) extends ISpace[C, P, A, R, K] {
-
-  private val logger: Logger = Logger[this.type]
+  private val logger: Logger                         = Logger[this.type]
+  override val transactional: Transactional[Id, TXN] = transactionalEv
 
   private val eventLog: SyncVar[Log] = {
     val log = new SyncVar[Log]()
@@ -42,7 +43,7 @@ class RSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branc
         logger.error(msg)
         throw new IllegalArgumentException(msg)
       }
-      store.withTxn(store.createTxnWrite()) { txn =>
+      transactional.withTxn(transactional.createTxnWrite()) { txn =>
         logger.debug(s"""|consume: searching for data matching <patterns: $patterns>
                          |at <channels: $channels>""".stripMargin.replace('\n', ' '))
 
@@ -103,7 +104,7 @@ class RSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branc
       logger.error(msg)
       throw new IllegalArgumentException(msg)
     }
-    store.withTxn(store.createTxnWrite()) { txn =>
+    transactional.withTxn(transactional.createTxnWrite()) { txn =>
       logger.debug(s"""|install: searching for data matching <patterns: $patterns>
                        |at <channels: $channels>""".stripMargin.replace('\n', ' '))
 
@@ -159,7 +160,7 @@ class RSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branc
   def produce(channel: C, data: A, persist: Boolean)(
       implicit m: Match[P, A, R]): Option[(K, Seq[R])] =
     store.eventsCounter.registerProduce {
-      store.withTxn(store.createTxnWrite()) { txn =>
+      transactional.withTxn(transactional.createTxnWrite()) { txn =>
         val groupedChannels: Seq[Seq[C]] = store.getJoin(txn, channel)
         logger.debug(s"""|produce: searching for matching continuations
                          |at <groupedChannels: $groupedChannels>""".stripMargin.replace('\n', ' '))
@@ -251,17 +252,19 @@ object RSpace {
       sc: Serialize[C],
       sp: Serialize[P],
       sa: Serialize[A],
-      sk: Serialize[K]): RSpace[C, P, A, R, K] = {
+      sk: Serialize[K]): RSpace[C, P, A, R, K, Txn[ByteBuffer]] = {
 
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec
     implicit val codecA: Codec[A] = sa.toCodec
     implicit val codecK: Codec[K] = sk.toCodec
 
+    implicit val lMDBTransactional = Transactional.lmdbTransactional[Id](context.env)
+
     history.initialize(context.trieStore, branch)
 
     val mainStore = LMDBStore.create[Id, C, P, A, K](context, branch)
 
-    new RSpace[C, P, A, R, K](mainStore, branch)
+    new RSpace[C, P, A, R, K, Txn[ByteBuffer]](mainStore, branch)
   }
 }

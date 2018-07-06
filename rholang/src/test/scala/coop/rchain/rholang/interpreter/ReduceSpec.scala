@@ -1,5 +1,6 @@
 package coop.rchain.rholang.interpreter
 
+import java.nio.ByteBuffer
 import java.nio.file.Files
 
 import cats.mtl.FunctorTell
@@ -22,6 +23,7 @@ import coop.rchain.rspace._
 import coop.rchain.rspace.history.Branch
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
+import org.lmdbjava.Txn
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.collection.immutable.BitSet
@@ -36,7 +38,7 @@ trait PersistentStoreTester {
     val store: IStore[Channel, BindPattern, ListChannelWithRandom, TaggedContinuation] =
       LMDBStore.create[Channel, BindPattern, ListChannelWithRandom, TaggedContinuation](dbDir,
                                                                                1024 * 1024 * 1024)
-    val space = new RSpace[Channel, BindPattern, ListChannelWithRandom, ListChannelWithRandom, TaggedContinuation](store, Branch("test"))
+    val space = new RSpace[Channel, BindPattern, ListChannelWithRandom, ListChannelWithRandom, TaggedContinuation, Txn[ByteBuffer]](store, Branch("test"))
     try {
       f(space)
     } finally {

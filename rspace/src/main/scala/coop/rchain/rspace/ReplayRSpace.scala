@@ -1,14 +1,18 @@
 package coop.rchain.rspace
 
+import java.nio.ByteBuffer
+
 import cats.Id
 import cats.implicits._
 import com.google.common.collect.Multiset
 import com.typesafe.scalalogging.Logger
 import coop.rchain.catscontrib._
+import coop.rchain.rspace.Transactional.LMDBTransactional
 import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.trace.{Produce, _}
 import coop.rchain.shared.SyncVarOps._
+import org.lmdbjava.Txn
 import scodec.Codec
 
 import scala.Function.const
@@ -18,12 +22,14 @@ import scala.collection.immutable.Seq
 import scala.concurrent.SyncVar
 import scala.util.Random
 
-class ReplayRSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch: Branch)(
+class ReplayRSpace[C, P, A, R, K, TXN](val store: IStore.AUX[Id, C, P, A, K, TXN],
+                                       val branch: Branch)(
     implicit
     serializeC: Serialize[C],
     serializeP: Serialize[P],
     serializeA: Serialize[A],
-    serializeK: Serialize[K]
+    serializeK: Serialize[K],
+    transactionalEv: Transactional[Id, TXN]
 ) extends ISpace[C, P, A, R, K] {
 
   private val logger: Logger = Logger[this.type]
@@ -34,6 +40,8 @@ class ReplayRSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch:
     sv
   }
 
+  override val transactional: Transactional[Id, TXN] = transactionalEv
+
   def consume(channels: Seq[C], patterns: Seq[P], continuation: K, persist: Boolean)(
       implicit m: Match[P, A, R]): Option[(K, Seq[R])] =
     store.eventsCounter.registerConsume {
@@ -42,7 +50,7 @@ class ReplayRSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch:
         logger.error(msg)
         throw new IllegalArgumentException(msg)
       }
-      store.withTxn(store.createTxnWrite()) { txn =>
+      transactional.withTxn(transactional.createTxnWrite()) { txn =>
         def runMatcher(maybeComm: Option[COMM]): Option[Seq[DataCandidate[C, R]]] = {
           val channelToIndexedData = channels.map { (c: C) =>
             c -> {
@@ -144,7 +152,7 @@ class ReplayRSpace[C, P, A, R, K](val store: IStore[Id, C, P, A, K], val branch:
   def produce(channel: C, data: A, persist: Boolean)(
       implicit m: Match[P, A, R]): Option[(K, Seq[R])] =
     store.eventsCounter.registerProduce {
-      store.withTxn(store.createTxnWrite()) { txn =>
+      transactional.withTxn(transactional.createTxnWrite()) { txn =>
         @tailrec
         def runMatcher(maybeComm: Option[COMM],
                        produceRef: Produce,
@@ -307,17 +315,19 @@ object ReplayRSpace {
       sc: Serialize[C],
       sp: Serialize[P],
       sa: Serialize[A],
-      sk: Serialize[K]): ReplayRSpace[C, P, A, R, K] = {
+      sk: Serialize[K]): ReplayRSpace[C, P, A, R, K, Txn[ByteBuffer]] = {
 
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec
     implicit val codecA: Codec[A] = sa.toCodec
     implicit val codecK: Codec[K] = sk.toCodec
 
+    implicit val lmdbTransactional = Transactional.lmdbTransactional[Id](context.env)
+
     history.initialize(context.trieStore, branch)
 
     val mainStore = LMDBStore.create[Id, C, P, A, K](context, branch)
 
-    new ReplayRSpace[C, P, A, R, K](mainStore, branch)
+    new ReplayRSpace[C, P, A, R, K, Txn[ByteBuffer]](mainStore, branch)
   }
 }

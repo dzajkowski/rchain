@@ -25,11 +25,7 @@ trait IStore[F[_], C, P, A, K] {
 
   private[rspace] type TT // trie transaction
 
-  private[rspace] def createTxnRead(): F[T]
-
-  private[rspace] def createTxnWrite(): F[T]
-
-  private[rspace] def withTxn[R](txn: T)(f: T => R): R
+  private[rspace] def withTrieTxn[R](txn: T)(f: TT => R): R
 
   private[rspace] def hashChannels(channels: Seq[C]): Blake2b256Hash
 
@@ -71,8 +67,6 @@ trait IStore[F[_], C, P, A, K] {
   val trieStore: ITrieStore[TT, Blake2b256Hash, GNAT[C, P, A, K]]
 
   val trieBranch: Branch
-
-  def withTrieTxn[R](txn: T)(f: TT => R): R
 
   private[rspace] val eventsCounter: StoreEventsCounter
 
@@ -126,4 +120,10 @@ trait IStore[F[_], C, P, A, K] {
   private[rspace] def clear(txn: T): Unit
 
   def isEmpty: F[Boolean]
+}
+
+object IStore {
+  type AUX[F[_], C, P, A, K, TXN] = IStore[F, C, P, A, K] {
+    type T = TXN
+  }
 }

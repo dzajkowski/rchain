@@ -49,7 +49,11 @@ object State {
 class InMemoryStore[C, P, A, K](
     val trieStore: ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
     val trieBranch: Branch
-)(implicit sc: Serialize[C], sp: Serialize[P], sa: Serialize[A], sk: Serialize[K])
+)(implicit sc: Serialize[C],
+  sp: Serialize[P],
+  sa: Serialize[A],
+  sk: Serialize[K],
+  transactional: Transactional[Id, Transaction[State[C, P, A, K]]])
     extends IStore[Id, C, P, A, K] {
 
   private implicit val codecK: Codec[K] = sk.toCodec
@@ -59,12 +63,6 @@ class InMemoryStore[C, P, A, K](
 
   val eventsCounter: StoreEventsCounter = new StoreEventsCounter()
 
-  private[this] val stateRef: SyncVar[State[C, P, A, K]] = {
-    val sv = new SyncVar[StateType]
-    sv.put(State.empty)
-    sv
-  }
-
   private[rspace] type T  = Transaction[StateType]
   private[rspace] type TT = Txn[ByteBuffer]
 
@@ -72,60 +70,6 @@ class InMemoryStore[C, P, A, K](
 
   private[rspace] def hashChannels(channels: Seq[C]): Blake2b256Hash =
     StableHashProvider.hash(channels)
-
-  private[rspace] def createTxnRead(): T = new Transaction[StateType] {
-
-    val name: String = "read-" + Thread.currentThread().getId
-
-    private[this] val state = stateRef.get
-
-    override def commit(): Unit = {}
-
-    override def abort(): Unit = {}
-
-    override def close(): Unit = {}
-
-    override def readState[R](f: StateType => R): R = f(state)
-
-    override def writeState[R](f: StateType => (StateType, R)): R =
-      throw new RuntimeException("read txn cannot write")
-  }
-
-  private[rspace] def createTxnWrite(): T =
-    new Transaction[StateType] {
-      val name: String = "write-" + Thread.currentThread().getId
-
-      private[this] val initial = stateRef.take
-      private[this] var current = initial
-
-      override def commit(): Unit =
-        stateRef.put(current)
-
-      override def abort(): Unit = stateRef.put(initial)
-
-      override def close(): Unit = {}
-
-      override def readState[R](f: StateType => R): R = f(current)
-
-      override def writeState[R](f: StateType => (StateType, R)): R = {
-        val (newState, result) = f(current)
-        current = newState
-        result
-      }
-    }
-
-  private[rspace] def withTxn[R](txn: T)(f: T => R): R =
-    try {
-      val ret: R = f(txn)
-      txn.commit()
-      ret
-    } catch {
-      case ex: Throwable =>
-        txn.abort()
-        throw ex
-    } finally {
-      txn.close()
-    }
 
   override def withTrieTxn[R](txn: Transaction[StateType])(f: Txn[ByteBuffer] => R): R =
     trieStore.withTxn(trieStore.createTxnWrite()) { ttxn =>
@@ -179,7 +123,7 @@ class InMemoryStore[C, P, A, K](
     })
 
   private[rspace] def joinMap: Map[Blake2b256Hash, Seq[Seq[C]]] =
-    withTxn(createTxnRead()) { txn =>
+    transactional.withTxn(transactional.createTxnRead()) { txn =>
       txn.readState(state => {
         state.dbJoins.map {
           case (k, v) => (Blake2b256Hash.create(Codec[C].encode(k).map(_.toByteArray).get), v)
@@ -269,14 +213,17 @@ class InMemoryStore[C, P, A, K](
     })
 
   def getStoreCounters: StoreCounters =
-    withTxn(createTxnRead())(_.readState(state => eventsCounter.createCounters(0, state.size)))
+    transactional.withTxn(transactional.createTxnRead())(_.readState(state =>
+      eventsCounter.createCounters(0, state.size)))
 
-  def isEmpty: Boolean = withTxn(createTxnRead())(_.readState(_.isEmpty))
+  def isEmpty: Boolean =
+    transactional.withTxn(transactional.createTxnRead())(_.readState(_.isEmpty))
 
-  def toMap: Map[Seq[C], Row[P, A, K]] = withTxn(createTxnRead()) { txn =>
-    txn.readState(_.dbGNATs.map {
-      case (_, GNAT(cs, data, wks)) => (cs, Row(data, wks))
-    })
+  def toMap: Map[Seq[C], Row[P, A, K]] = transactional.withTxn(transactional.createTxnRead()) {
+    txn =>
+      txn.readState(_.dbGNATs.map {
+        case (_, GNAT(cs, data, wks)) => (cs, Row(data, wks))
+      })
   }
 
   private[this] def isOrphaned(gnat: GNAT[C, P, A, K]): Boolean =
@@ -313,10 +260,13 @@ object InMemoryStore {
     }
 
   def create[C, P, A, K](trieStore: ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[C, P, A, K]],
-                         branch: Branch)(implicit sc: Serialize[C],
-                                         sp: Serialize[P],
-                                         sa: Serialize[A],
-                                         sk: Serialize[K]): InMemoryStore[C, P, A, K] = {
+                         branch: Branch)(
+      implicit sc: Serialize[C],
+      sp: Serialize[P],
+      sa: Serialize[A],
+      sk: Serialize[K],
+      transactional: Transactional[Id, Transaction[State[C, P, A, K]]])
+    : InMemoryStore[C, P, A, K] = {
     implicit val codecK: Codec[K] = sk.toCodec
     implicit val codecC: Codec[C] = sc.toCodec
     implicit val codecP: Codec[P] = sp.toCodec
