@@ -53,37 +53,45 @@ object Transactional {
         })
     }
 
-  def lmdbCombined[F[_]: Capture: Monad](
-      env: Env[ByteBuffer]): Transactional[F, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+  def lmdbCombined[F[_]: Capture: Monad](transactional: Transactional[F, Txn[ByteBuffer]])
+    : Transactional[F, (Txn[ByteBuffer], Txn[ByteBuffer])] =
     new Transactional[F, (Txn[ByteBuffer], Txn[ByteBuffer])] {
       def createTxnRead(): F[(Txn[ByteBuffer], Txn[ByteBuffer])] =
-        Capture[F].capture { env.txnRead }.map(txn => (txn, txn))
+        transactional.createTxnRead().map(txn => (txn, txn))
 
       def createTxnWrite(): F[(Txn[ByteBuffer], Txn[ByteBuffer])] =
-        Capture[F].capture { env.txnWrite }.map(txn => (txn, txn))
-
-      def withTxnInternal[R](txnPair: (Txn[ByteBuffer], Txn[ByteBuffer]))(
-          f: ((Txn[ByteBuffer], Txn[ByteBuffer])) => R): R = {
-        val txn = txnPair._1
-        try {
-          val ret: R = f(txnPair)
-          txn.commit()
-          ret
-        } catch {
-          case ex: Throwable =>
-            txn.abort()
-            throw ex
-        } finally {
-          txn.close()
-        }
-      }
+        transactional.createTxnWrite().map(txn => (txn, txn))
 
       def withTxn[R](t: F[(Txn[ByteBuffer], Txn[ByteBuffer])])(
           f: ((Txn[ByteBuffer], Txn[ByteBuffer])) => F[R]): F[R] =
-        t >>= ((_t: (Txn[ByteBuffer], Txn[ByteBuffer])) => {
-          withTxnInternal(_t) { txn =>
-            f(txn)
-          }
-        })
+        transactional.withTxn(t.map(_._1)) { itxn =>
+          f((itxn, itxn))
+        }
+    }
+
+  def combine[F[_]: Monad, TXN1, TXN2](t1: Transactional[F, TXN1],
+                                       t2: Transactional[F, TXN2]): Transactional[F, (TXN1, TXN2)] =
+    new Transactional[F, (TXN1, TXN2)] {
+      def createTxnRead(): F[(TXN1, TXN2)] =
+        for {
+          txn1 <- t1.createTxnRead()
+          txn2 <- t2.createTxnRead()
+        } yield (txn1, txn2)
+
+      def createTxnWrite(): F[(TXN1, TXN2)] =
+        for {
+          txn1 <- t1.createTxnWrite()
+          txn2 <- t2.createTxnWrite()
+        } yield (txn1, txn2)
+
+      def withTxn[R](t: F[(TXN1, TXN2)])(f: ((TXN1, TXN2)) => F[R]): F[R] =
+        t >>= {
+          case (txn1, txn2) =>
+            t1.withTxn(txn1.pure[F]) { itxn1 =>
+              t2.withTxn(txn2.pure[F]) { itxn2 =>
+                f(itxn1, itxn2)
+              }
+            }
+        }
     }
 }

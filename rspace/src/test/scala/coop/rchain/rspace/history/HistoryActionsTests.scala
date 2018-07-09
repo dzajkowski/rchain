@@ -322,15 +322,16 @@ abstract class HistoryActionsTests[T] extends HistoryTestsBase[Id, T, TestKey4, 
       insert(store, branch, key5, val5)
       insert(store, branch, key6, val6)
 
-      val leaves = getRoot(store, branch).map(getLeaves(store, _))
+      val leaves: Seq[Leaf[TestKey4, ByteVector]] =
+        getRoot(store, branch).map(getLeaves(store, _)).getOrElse(Seq.empty)
 
-      leaves.value should contain theSameElementsAs expected
+      leaves should contain theSameElementsAs expected
     }
 }
 
-trait GenerativeHistoryActionsTests[F[_], T, K]
-    extends HistoryTestsBase[F, T, K, ByteVector]
-    with WithTestStore[F, T, K, ByteVector] {
+trait GenerativeHistoryActionsTests[T, K]
+    extends HistoryTestsBase[Id, T, K, ByteVector]
+    with WithTestStore[Id, T, K, ByteVector] {
 
   implicit def arbitraryMap: Arbitrary[Map[K, ByteVector]]
 
@@ -404,8 +405,9 @@ trait GenerativeHistoryActionsTests[F[_], T, K]
       withTestTrieStore { implicit txnal => store => branch =>
         val expected = kvs.map { case (k, v) => Leaf(k, v) }
         kvs.foreach { case (k, v) => insert(store, branch, k, v) }
-        val leaves = getRoot(store, branch).map(getLeaves(store, _))
-        leaves.value should contain theSameElementsAs expected
+        val leaves: Seq[Leaf[K, ByteVector]] =
+          getRoot(store, branch).map(getLeaves(store, _)).getOrElse(Seq.empty)
+        leaves should contain theSameElementsAs expected
       }
     }
 }
@@ -415,17 +417,20 @@ object HistoryActionsTests {
   def insertAll[T, K, V](store: ITrieStore[Id, T, K, V], branch: Branch, pairs: Seq[(K, V)])(
       implicit
       codecK: Codec[K],
-      codecV: Codec[V]): Unit =
+      codecV: Codec[V],
+      txnal: Transactional[Id, T]): Unit =
     pairs.foreach { case (k, v) => insert(store, branch, k, v) }
 
   def deleteAll[T, K, V](store: ITrieStore[Id, T, K, V], branch: Branch, pairs: Seq[(K, V)])(
       implicit
       codecK: Codec[K],
-      codecV: Codec[V]): Unit =
+      codecV: Codec[V],
+      txnal: Transactional[Id, T]): Unit =
     pairs.foreach { case (k, v) => delete(store, branch, k, v) }
 
   def lookupAll[T, K, V](store: ITrieStore[Id, T, K, V], branch: Branch, pairs: Seq[(K, V)])(
-      implicit codecK: Codec[K]): Seq[(K, V)] =
+      implicit codecK: Codec[K],
+      txnal: Transactional[Id, T]): Seq[(K, V)] =
     pairs.flatMap { case (k, _) => lookup(store, branch, k).map((v: V) => (k, v)).toList }
 }
 
@@ -435,10 +440,11 @@ trait LMDBWithTestTrieStore[K]
   val dbDir: Path   = Files.createTempDirectory("rchain-storage-history-test-")
   val mapSize: Long = 1024L * 1024L * 1024L
 
-  override def withTestTrieStore[R](
-      f: (Transactional[Id, Txn[ByteBuffer]],
-          ITrieStore[Id, Txn[ByteBuffer], K, ByteVector],
-          Branch) => R): R = {
+  override def withTestTrieStore[R](f: Transactional[Id, Txn[ByteBuffer]] => ITrieStore[
+    Id,
+    Txn[ByteBuffer],
+    K,
+    ByteVector] => Branch => R): R = {
     val env: Env[ByteBuffer] =
       Env
         .create()
@@ -449,12 +455,12 @@ trait LMDBWithTestTrieStore[K]
 
     implicit val transactional: Transactional[Id, Txn[ByteBuffer]] =
       Transactional.lmdbTransactional(env)
-    val testStore  = LMDBTrieStore.create[K, ByteVector](env)
+    val testStore  = LMDBTrieStore.create[Id, K, ByteVector](env)
     val testBranch = Branch("test")
     transactional.withTxn(transactional.createTxnWrite())(txn => testStore.clear(txn))
     try {
       initialize(testStore, testBranch)
-      f(transactional, testStore, testBranch)
+      f(transactional)(testStore)(testBranch)
     } finally {
       testStore.close()
       env.close()
@@ -467,13 +473,13 @@ trait LMDBWithTestTrieStore[K]
 
 class LMDBHistoryActionsTests
     extends HistoryActionsTests[Txn[ByteBuffer]]
-    with GenerativeHistoryActionsTests[Id, Txn[ByteBuffer], TestKey4]
+    with GenerativeHistoryActionsTests[Txn[ByteBuffer], TestKey4]
     with LMDBWithTestTrieStore[TestKey4] {
   implicit val arbitraryMap = ArbitraryInstances.arbitraryNonEmptyMapTestKeyByteVector
 }
 
 class LMDBHistoryActionsTestsKey32
-    extends GenerativeHistoryActionsTests[Id, Txn[ByteBuffer], TestKey32]
+    extends GenerativeHistoryActionsTests[Txn[ByteBuffer], TestKey32]
     with LMDBWithTestTrieStore[TestKey32] {
   implicit val codecV: Codec[ByteVector] = variableSizeBytesLong(int64, bytes)
   implicit val codecK: Codec[TestKey32]  = TestKey32.codecTestKey

@@ -262,7 +262,7 @@ object RSpace {
     implicit val codecK: Codec[K] = sk.toCodec
 
     implicit val lMDBTransactional = Transactional.lmdbTransactional[Id](context.env)
-    implicit val lmdbCombined      = Transactional.lmdbCombined[Id](context.env)
+    implicit val lmdbCombined      = Transactional.lmdbCombined[Id](lMDBTransactional)
 
     history.initialize(context.trieStore, branch)
 

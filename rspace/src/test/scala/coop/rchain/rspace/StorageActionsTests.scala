@@ -1279,7 +1279,6 @@ trait StorageActionsTests
     withTestSpace { space =>
       val root0 = space.createCheckpoint().root
 
-      implicit val txnal = space.trieTransactional
       val gnat1 = {
         val channels = List("ch1")
         GNAT(channels,
@@ -1315,7 +1314,6 @@ trait StorageActionsTests
     space =>
       val root0 = space.createCheckpoint().root
 
-      implicit val txnal = space.trieTransactional
       val gnat1 = {
         val channels = List("ch1", "ch2")
         GNAT(channels,
@@ -1370,7 +1368,6 @@ trait StorageActionsTests
     "have the expected contents" in {
     val prop = Prop.forAllNoShrink { (data: Seq[TestProduceMap]) =>
       withTestSpace { space =>
-        implicit val txnal = space.trieTransactional
         logger.debug(s"Test: ${data.length} stages")
 
         val states = data.zipWithIndex.map {
@@ -1395,7 +1392,6 @@ trait StorageActionsTests
     "have the expected contents" in {
     val prop = Prop.forAllNoShrink { (data: Seq[TestConsumeMap]) =>
       withTestSpace { space =>
-        implicit val txnal = space.trieTransactional
         logger.debug(s"Test: ${data.length} stages")
 
         val states = data.zipWithIndex.map {
@@ -1420,7 +1416,6 @@ trait StorageActionsTests
     "have the expected contents" in {
     val prop = Prop.forAllNoShrink { (data: Seq[(TestConsumeMap, TestProduceMap)]) =>
       withTestSpace { space =>
-        implicit val txnal = space.trieTransactional
         logger.debug(s"Test: ${data.length} stages")
 
         val states = data.zipWithIndex.map {
@@ -1451,8 +1446,6 @@ trait StorageActionsTests
     val patterns = List[Pattern](Wildcard, Wildcard)
     val k        = new StringsCaptor
     val data     = List("datum1", "datum2")
-
-    implicit val txnal = space.trieTransactional
 
     space.consume(channels, patterns, k, false)
 

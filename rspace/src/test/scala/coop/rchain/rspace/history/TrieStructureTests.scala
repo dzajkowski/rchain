@@ -19,8 +19,8 @@ class TrieStructureTests
   implicit val codecK: Codec[TestKey4]   = TestKey4.codecTestKey
 
   def withTrie[R](f: Trie[TestKey4, ByteVector] => R): R =
-    withTestTrieStore { (txnal, store, branch) =>
-      store.withTxn(store.createTxnRead()) { txn =>
+    withTestTrieStore { txnal => store => branch =>
+      txnal.withTxn(txnal.createTxnRead()) { txn =>
         val trieOpt = store.get(txn, store.getRoot(txn, branch).get)
         trieOpt should not be empty
         f(trieOpt.get)
@@ -32,8 +32,8 @@ class TrieStructureTests
           Branch,
           Txn[ByteBuffer],
           Trie[TestKey4, ByteVector]) => R): R =
-    withTestTrieStore { (txnal, store, branch) =>
-      store.withTxn(store.createTxnRead()) { txn =>
+    withTestTrieStore { txnal => store => branch =>
+      txnal.withTxn(txnal.createTxnRead()) { txn =>
         val trieOpt = store.get(txn, store.getRoot(txn, branch).get)
         trieOpt should not be empty
         f(store, branch, txn, trieOpt.get)
@@ -64,7 +64,8 @@ class TrieStructureTests
   "insert's effect" should "be visible in the outer read transaction" ignore {
     withTrieTxnAndStore { (store, branch, txn, trie) =>
       import SingleElementData._
-      insert(store, branch, key1, val1)
+      // FIXME needs a trie txn
+//      insert(store, branch, key1, val1)
       // Insert was made in a nested transaction, so it's effect should be visible
       store.get(txn, store.getRoot(txn, branch).get) should not be None
     }
@@ -80,26 +81,26 @@ class TrieStructureTests
     }
 
   it should "have two levels after inserting one element" in {
-    withTestTrieStore { (txnal, store, branch) =>
+    withTestTrieStore { implicit txnal => store => branch =>
       import SingleElementData._
       insert(store, branch, key1, val1)
 
-      assertSingleElementTrie(store)
+      assertSingleElementTrie(store, txnal)
     }
   }
 
   it should "have four levels after inserting second element with same hash prefix" in {
-    withTestTrieStore { (txnal, store, branch) =>
+    withTestTrieStore { implicit txnal => store => branch =>
       import CommonPrefixData._
       insert(store, branch, key1, val1)
       insert(store, branch, key2, val2)
 
-      assertCommonPrefixTrie(store)
+      assertCommonPrefixTrie(store, txnal)
     }
   }
 
   it should "retain previous structure after delete" in {
-    withTestTrieStore { (txnal, store, branch) =>
+    withTestTrieStore { implicit txnal => store => branch =>
       import CommonPrefixData._
 
       insert(store, branch, key1, val1)
@@ -107,27 +108,27 @@ class TrieStructureTests
       delete(store, branch, key2, val2)
       delete(store, branch, key1, val1)
 
-      assertSingleElementTrie(store)
-      assertCommonPrefixTrie(store)
+      assertSingleElementTrie(store, txnal)
+      assertCommonPrefixTrie(store, txnal)
     }
   }
 
   it should "retain previous structure after rollback" in {
-    withTestTrieStore { (txnal, store, branch) =>
+    withTestTrieStore { implicit txnal => store => branch =>
       import CommonPrefixData._
 
       insert(store, branch, key1, val1)
       insert(store, branch, key2, val2)
 
-      store.withTxn(store.createTxnWrite()) { txn =>
+      txnal.withTxn(txnal.createTxnWrite()) { txn =>
         store.putRoot(txn,
                       branch,
                       Blake2b256Hash
                         .fromHex(SingleElementData.rootHex))
       }
 
-      assertSingleElementTrie(store)
-      assertCommonPrefixTrie(store)
+      assertSingleElementTrie(store, txnal)
+      assertCommonPrefixTrie(store, txnal)
     }
   }
 
@@ -135,8 +136,9 @@ class TrieStructureTests
     TestKey4.create(s.map(c => Integer.parseInt(c.toString)))
 
   it should "build one level of skip nodes for 4 element key" in withTestTrieStore {
-    (txnal, store, branch) =>
-      val k1: TestKey4 = "1000"
+    txnal => store => branch =>
+      implicit val implicitTxnal: Transactional[Id, Txn[ByteBuffer]] = txnal
+      val k1: TestKey4                                               = "1000"
       insert(store, branch, k1, TestData.val1)
 
       txnal.withTxn(txnal.createTxnRead()) { txn =>
@@ -156,13 +158,13 @@ class TrieStructureTests
   }
 
   it should "build two levels of skip nodes for 4 element key" in withTestTrieStore {
-    (txnal, store, branch) =>
+    implicit txnal => store => branch =>
       val k1: TestKey4 = "1000"
       val k2: TestKey4 = "1001"
       insert(store, branch, k1, TestData.val1)
       insert(store, branch, k2, TestData.val1)
 
-      store.withTxn(store.createTxnRead()) { txn =>
+      txnal.withTxn(txnal.createTxnRead()) { txn =>
         val root = store.get(txn, store.getRoot(txn, branch).get).get.asInstanceOf[Node]
         root.pointerBlock.children should have size 1
         root.pointerBlock.childrenWithIndex(0)._2 shouldBe 1
@@ -201,13 +203,13 @@ class TrieStructureTests
   }
 
   it should "not add unnecessary skip on 1st level after root" in withTestTrieStore {
-    (txnal, store, branch) =>
+    implicit txnal => store => branch =>
       val k1 = TestKey4.create(Vector(1, 0, 1, 0))
       val k2 = TestKey4.create(Vector(1, 1, 0, 0))
       insert(store, branch, k1, TestData.val1)
       insert(store, branch, k2, TestData.val2)
 
-      store.withTxn(store.createTxnRead()) { txn =>
+      txnal.withTxn(txnal.createTxnRead()) { txn =>
         val root = store.get(txn, store.getRoot(txn, branch).get).get.asInstanceOf[Node]
         root.pointerBlock.children should have size 1
         root.pointerBlock.childrenWithIndex(0)._2 shouldBe 1

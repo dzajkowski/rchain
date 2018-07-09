@@ -3,7 +3,7 @@ package coop.rchain.rspace
 import java.nio.ByteBuffer
 import java.nio.file.{Files, Path}
 
-import cats.{Id}
+import cats.Id
 import coop.rchain.rspace.examples.AddressBookExample._
 import coop.rchain.rspace.examples.AddressBookExample.implicits._
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, LMDBTrieStore}
@@ -359,18 +359,24 @@ class InMemoryStoreStorageExamplesTestsBase
     val stateRef = new SyncVar[StateType]
     stateRef.put(State.empty)
 
-    implicit val inMemTxn: Transactional[Id, InMemTxn] = inMemTxnX(stateRef)
+    implicit val inMemTxn: Transactional[Id, InMemTxn]       = inMemTxnX(stateRef)
+    implicit val lmdbTxn: Transactional[Id, Txn[ByteBuffer]] = Transactional.lmdbTransactional(env)
+    implicit val combined: Transactional[Id, (InMemTxn, Txn[ByteBuffer])] =
+      Transactional.combine(inMemTxn, lmdbTxn)
 
-    val trieStore
-      : ITrieStore[Txn[ByteBuffer], Blake2b256Hash, GNAT[Channel, Pattern, Entry, EntriesCaptor]] =
-      LMDBTrieStore.create[Blake2b256Hash, GNAT[Channel, Pattern, Entry, EntriesCaptor]](env)
+    val trieStore: ITrieStore[Id,
+                              Txn[ByteBuffer],
+                              Blake2b256Hash,
+                              GNAT[Channel, Pattern, Entry, EntriesCaptor]] =
+      LMDBTrieStore.create[Id, Blake2b256Hash, GNAT[Channel, Pattern, Entry, EntriesCaptor]](env)
 
     val testStore = InMemoryStore.create[Channel, Pattern, Entry, EntriesCaptor](trieStore, branch)
     val testSpace =
-      new RSpace[Channel, Pattern, Entry, Entry, EntriesCaptor, InMemTxn](testStore, Branch.MASTER)
-    testSpace.storeTransactional.withTxn(testSpace.storeTransactional.createTxnWrite())(
-      testStore.clear)
-    trieStore.withTxn(trieStore.createTxnWrite())(trieStore.clear)
+      new RSpace[Channel, Pattern, Entry, Entry, EntriesCaptor, InMemTxn, Txn[ByteBuffer]](
+        testStore,
+        Branch.MASTER)
+    inMemTxn.withTxn(inMemTxn.createTxnWrite())(testStore.clear)
+    lmdbTxn.withTxn(lmdbTxn.createTxnWrite())(trieStore.clear)
     initialize(trieStore, branch)
     try {
       f(testSpace)
@@ -400,10 +406,12 @@ class LMDBStoreStorageExamplesTestBase
 
   override def withTestSpace[R](f: T => R): R = {
     val env = Context.env(dbDir, mapSize, noTls)
-    val context: Context[Id, Channel, Pattern, Entry, EntriesCaptor] =
-      Context.create(env, dbDir)
     implicit val transactional: Transactional[Id, Txn[ByteBuffer]] =
       Transactional.lmdbTransactional(env)
+    implicit val combined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+      Transactional.lmdbCombined(transactional)
+    val context: Context[Id, Channel, Pattern, Entry, EntriesCaptor] =
+      Context.create(env, dbDir)
     val testStore =
       LMDBStore.create[Id, Channel, Pattern, Entry, EntriesCaptor](context, Branch.MASTER)
     val testSpace =

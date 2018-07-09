@@ -37,7 +37,7 @@ trait HistoryTestsBase[F[_], T, K, V]
 
   def getLeaves(store: ITrieStore[F, T, K, V], hash: Blake2b256Hash)(
       implicit txnal: Transactional[F, T],
-      capture: Capture[F]): Seq[Leaf[K, V]] =
+      capture: Capture[F]): F[Seq[Leaf[K, V]]] =
     txnal.withTxn(txnal.createTxnRead())(txn => capture.capture { store.getLeaves(txn, hash) })
 
   object TestData {

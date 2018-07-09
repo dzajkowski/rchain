@@ -323,7 +323,7 @@ object ReplayRSpace {
     implicit val codecK: Codec[K] = sk.toCodec
 
     implicit val lmdbTransactional = Transactional.lmdbTransactional[Id](context.env)
-    implicit val lmdbCombined      = Transactional.lmdbCombined[Id](context.env)
+    implicit val lmdbCombined      = Transactional.lmdbCombined[Id](lmdbTransactional)
 
     history.initialize(context.trieStore, branch)
 

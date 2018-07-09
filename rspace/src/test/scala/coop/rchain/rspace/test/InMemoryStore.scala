@@ -8,14 +8,13 @@ import coop.rchain.rspace._
 import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, Leaf}
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.util.canonicalize
+import coop.rchain.catscontrib._
 import coop.rchain.shared.SeqOps.{dropIndex, removeFirst}
 import coop.rchain.shared.AttemptOps._
 import org.lmdbjava.Txn
 import scodec.Codec
-import scodec.bits.BitVector
 
 import scala.collection.immutable.Seq
-import scala.concurrent.SyncVar
 
 trait Transaction[S] {
   def commit(): Unit
@@ -54,7 +53,7 @@ class InMemoryStore[C, P, A, K](
   sa: Serialize[A],
   sk: Serialize[K],
   transactional: Transactional[Id, Transaction[State[C, P, A, K]]],
-  trieTxnal: Transactional[Id, Txn[ByteBuffer]])
+  override val trieTransactional: Transactional[Id, Txn[ByteBuffer]])
     extends IStore[Id, C, P, A, K] {
 
   private implicit val codecK: Codec[K] = sk.toCodec
@@ -63,6 +62,8 @@ class InMemoryStore[C, P, A, K](
   private implicit val codecA: Codec[A] = sa.toCodec
 
   val eventsCounter: StoreEventsCounter = new StoreEventsCounter()
+
+  override val capture: Capture[Id] = Capture.idCapture
 
   private[rspace] type T  = Transaction[StateType]
   private[rspace] type TT = Txn[ByteBuffer]
@@ -73,7 +74,7 @@ class InMemoryStore[C, P, A, K](
     StableHashProvider.hash(channels)
 
   override def withTrieTxn[R](txn: Transaction[StateType])(f: Txn[ByteBuffer] => R): R =
-    trieTxnal.withTxn(trieTxnal.createTxnWrite()) { ttxn =>
+    trieTransactional.withTxn(trieTransactional.createTxnWrite()) { ttxn =>
       f(ttxn)
     }
 

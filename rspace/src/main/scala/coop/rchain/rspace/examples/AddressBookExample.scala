@@ -172,11 +172,11 @@ object AddressBookExample {
 
     val env = Context.env(storePath, 1024L * 1024L)
 
-    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
-      Transactional.lmdbCombined(env)
-
     implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
       Transactional.lmdbTransactional(env)
+
+    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+      Transactional.lmdbCombined(lmdbTransactional)
 
     val context = Context.create[Id, Channel, Pattern, Entry, Printer](env, storePath)
     // Let's define our store
@@ -217,11 +217,11 @@ object AddressBookExample {
     val storePath: Path = Files.createTempDirectory("rspace-address-book-example-")
 
     val env = Context.env(storePath, 1024L * 1024L)
-    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
-      Transactional.lmdbCombined(env)
-
     implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
       Transactional.lmdbTransactional(env)
+
+    implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
+      Transactional.lmdbCombined(lmdbTransactional)
 
     val context = Context.create[Id, Channel, Pattern, Entry, Printer](env, storePath)
 
@@ -318,7 +318,7 @@ object AddressBookExample {
     implicit val lmdbTransactional: Transactional[Id, Txn[ByteBuffer]] =
       Transactional.lmdbTransactional(env)
     implicit val lmdbCombined: Transactional[Id, (Txn[ByteBuffer], Txn[ByteBuffer])] =
-      Transactional.lmdbCombined(env)
+      Transactional.lmdbCombined(lmdbTransactional)
     val context = Context.create[Id, Channel, Pattern, Entry, Printer](env, storePath)
     val branch  = Branch.MASTER
     // Let's define our store
