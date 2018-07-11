@@ -25,7 +25,7 @@ import scala.collection.immutable.Seq
   * To create an instance, use [[LMDBStore.create]].
   */
 class LMDBStore[C, P, A, K] private (
-    env: Env[ByteBuffer],
+    val env: Env[ByteBuffer],
     databasePath: Path,
     _dbGNATs: Dbi[ByteBuffer],
     _dbJoins: Dbi[ByteBuffer],
@@ -36,7 +36,8 @@ class LMDBStore[C, P, A, K] private (
   codecP: Codec[P],
   codecA: Codec[A],
   codecK: Codec[K])
-    extends IStore[C, P, A, K] {
+    extends IStore[C, P, A, K]
+    with LMDBStorage {
 
   // Good luck trying to get this to resolve as an implicit
   val joinCodec: Codec[Seq[Seq[C]]] = codecSeq(codecSeq(codecC))
@@ -47,23 +48,6 @@ class LMDBStore[C, P, A, K] private (
   def withTrieTxn[R](txn: T)(f: TRIE_TXN => R): R = f(txn)
 
   val eventsCounter: StoreEventsCounter = new StoreEventsCounter()
-
-  private[rspace] def createTxnRead(): T = env.txnRead
-
-  private[rspace] def createTxnWrite(): T = env.txnWrite
-
-  private[rspace] def withTxn[R](txn: T)(f: T => R): R =
-    try {
-      val ret: R = f(txn)
-      txn.commit()
-      ret
-    } catch {
-      case ex: Throwable =>
-        txn.abort()
-        throw ex
-    } finally {
-      txn.close()
-    }
 
   /* Basic operations */
   private[this] def fetchGNAT(txn: T, channelsHash: Blake2b256Hash): Option[GNAT[C, P, A, K]] = {

@@ -2,7 +2,7 @@ package coop.rchain.rspace.history
 
 import java.nio.ByteBuffer
 
-import coop.rchain.rspace.Blake2b256Hash
+import coop.rchain.rspace.{Blake2b256Hash, LMDBStorage}
 import coop.rchain.shared.AttemptOps._
 import coop.rchain.shared.ByteVectorOps._
 import coop.rchain.shared.Resources.withResource
@@ -20,24 +20,8 @@ class LMDBTrieStore[K, V] private (val env: Env[ByteBuffer],
                                    _dbPastRoots: Dbi[ByteBuffer])(implicit
                                                                   codecK: Codec[K],
                                                                   codecV: Codec[V])
-    extends ITrieStore[Txn[ByteBuffer], K, V] {
-
-  private[rspace] def createTxnRead(): Txn[ByteBuffer] = env.txnRead
-
-  private[rspace] def createTxnWrite(): Txn[ByteBuffer] = env.txnWrite
-
-  private[rspace] def withTxn[R](txn: Txn[ByteBuffer])(f: Txn[ByteBuffer] => R): R =
-    try {
-      val ret: R = f(txn)
-      txn.commit()
-      ret
-    } catch {
-      case ex: Throwable =>
-        txn.abort()
-        throw ex
-    } finally {
-      txn.close()
-    }
+    extends ITrieStore[Txn[ByteBuffer], K, V]
+    with LMDBStorage {
 
   private[rspace] def put(txn: Txn[ByteBuffer], key: Blake2b256Hash, value: Trie[K, V]): Unit = {
     val encodedKey   = Codec[Blake2b256Hash].encode(key).get
