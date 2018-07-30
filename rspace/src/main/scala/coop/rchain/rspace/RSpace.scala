@@ -35,8 +35,12 @@ class RSpace[C, P, A, R, K](store: IStore[C, P, A, K], branch: Branch)(
   protected[this] val installSpan = Kamon.buildSpan("rspace.install")
 
   def consume(channels: Seq[C], patterns: Seq[P], continuation: K, persist: Boolean)(
-      implicit m: Match[P, A, R]): Option[(K, Seq[R])] =
-    Kamon.withSpan(consumeSpan.start(), finishSpan = true) {
+      implicit m: Match[P, A, R]): Option[(K, Seq[R])] = {
+    throw new RuntimeException("silly but effective")
+  }
+
+  /*
+  Kamon.withSpan(consumeSpan.start(), finishSpan = true) {
       if (channels.length =!= patterns.length) {
         val msg = "channels.length must equal patterns.length"
         logger.error(msg)
@@ -95,6 +99,7 @@ class RSpace[C, P, A, R, K](store: IStore[C, P, A, K], branch: Branch)(
         }
       }
     }
+    */
 
   def produce(channel: C, data: A, persist: Boolean)(
       implicit m: Match[P, A, R]): Option[(K, Seq[R])] =
