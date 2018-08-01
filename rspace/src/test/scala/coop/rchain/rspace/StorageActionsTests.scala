@@ -25,7 +25,7 @@ trait StorageActionsTests
     with Checkers {
 
   implicit override val generatorDrivenConfig =
-    PropertyCheckConfiguration(minSuccessful = 5, sizeRange = 30)
+    PropertyCheckConfiguration(minSuccessful = 1000, sizeRange = 100, minSize = 1)
 
   implicit val codecString: Codec[String]   = implicitly[Serialize[String]].toCodec
   implicit val codecP: Codec[Pattern]       = implicitly[Serialize[Pattern]].toCodec
