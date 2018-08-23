@@ -79,7 +79,7 @@ object RholangOnlyDispatcher {
                               ListChannelWithRandom,
                               ListChannelWithRandom,
                               TaggedContinuation] =
-      new PureRSpace(tuplespace)
+      PureRSpace.sync(tuplespace)
     lazy val tuplespaceAlg = TuplespaceAlg.rspaceTuplespace(pureSpace, dispatcher)
     lazy val dispatcher: Dispatch[M, ListChannelWithRandom, TaggedContinuation] =
       new RholangOnlyDispatcher(reducer)
@@ -144,7 +144,7 @@ object RholangAndScalaDispatcher {
                               ListChannelWithRandom,
                               ListChannelWithRandom,
                               TaggedContinuation] =
-      new PureRSpace(tuplespace)
+      PureRSpace.sync(tuplespace)
     lazy val tuplespaceAlg = TuplespaceAlg.rspaceTuplespace(pureSpace, dispatcher)
     lazy val dispatcher: Dispatch[M, ListChannelWithRandom, TaggedContinuation] =
       new RholangAndScalaDispatcher(reducer, dispatchTable)
