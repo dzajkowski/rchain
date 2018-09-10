@@ -25,7 +25,7 @@ object PerformanceDiscoveryMain {
       RSpace.create[Channel, Pattern, Entry, Entry, EntriesCaptor](testStore, Branch.MASTER)
     testStore.withTxn(testStore.createTxnWrite())(txn => testStore.clear(txn))
 
-    val tasksCount      = 200//Runtime.getRuntime.availableProcessors
+    val tasksCount      = 200 //Runtime.getRuntime.availableProcessors
     val iterationsCount = 10
 
     val channel = Channel("friends#" + 1.toString)
@@ -46,7 +46,7 @@ object PerformanceDiscoveryMain {
     def createTask(taskIndex: Int, iterations: Int): Task[Long] =
       Task.delay {
 
-        val start   = System.nanoTime()
+        val start = System.nanoTime()
 
         for (_ <- 1 to iterations) {
           val r1 = space.produce(channel2, bob, persist = false)
@@ -75,7 +75,7 @@ object PerformanceDiscoveryMain {
 //    val t = Task.sequence(tasks)
 //    val times = tasks.map(t => Await.result(t, Duration.Inf))
     implicit val xs = s
-    val fss = Future.sequence(fs)
+    val fss         = Future.sequence(fs)
 
     val tx = Await.ready(fss, Duration.Inf)
 
