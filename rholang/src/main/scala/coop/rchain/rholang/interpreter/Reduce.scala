@@ -23,6 +23,7 @@ import coop.rchain.rholang.interpreter.matcher._
 import coop.rchain.rholang.interpreter.storage.TuplespaceAlg
 import coop.rchain.rspace.Serialize
 import monix.eval.Coeval
+import monix.reactive.observers.Subscriber
 
 import scala.collection.immutable.BitSet
 import scala.util.Try
@@ -109,7 +110,11 @@ object Reduce {
         rand: Blake2b512Random)(implicit costAccountingAlg: CostAccountingAlg[M]): M[Unit] =
       for {
         _ <- costAccountingAlg.charge(Channel(chan).storageCost + data.storageCost)
+        _ = println(s"will schedule produce , ${rand.hashCode().toString}")
+        _ <- Sync[M].delay { println(s"will run produce , ${rand.hashCode().toString}") }
         c <- tuplespaceAlg.produce(Channel(chan), ListChannelWithRandom(data, rand), persistent)
+        _ <- Sync[M].delay { println(s"did run produce ${rand.hashCode().toString}") }
+        _ = println(s"did schedule produce, ${rand.hashCode().toString}")
         _ <- costAccountingAlg.modify(_.charge(c))
       } yield ()
 
@@ -134,7 +139,11 @@ object Reduce {
       val rspaceCost                                        = body.storageCost + patterns.storageCost + srcs.storageCost
       for {
         _ <- costAccountingAlg.charge(rspaceCost)
+        _ = println(s"will schedule consume , ${rand.hashCode().toString}")
+        _ <- Sync[M].delay { println(s"will run consume , ${rand.hashCode().toString}") }
         c <- tuplespaceAlg.consume(binds, ParWithRandom(body, rand), persistent)
+        _ <- Sync[M].delay { println(s"did run consume ${rand.hashCode().toString}") }
+        _ = println(s"did schedule consume, ${rand.hashCode().toString}")
         _ <- costAccountingAlg.modify(_.charge(c))
       } yield ()
     }

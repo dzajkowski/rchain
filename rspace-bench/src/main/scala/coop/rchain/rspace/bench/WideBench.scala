@@ -1,6 +1,7 @@
 package coop.rchain.rspace.bench
 import java.io.{FileNotFoundException, InputStreamReader}
 import java.nio.file.{Files, Path}
+import java.util.concurrent.TimeUnit
 
 import coop.rchain.crypto.hash.Blake2b512Random
 import coop.rchain.models.Par
@@ -24,17 +25,21 @@ class WideBench {
   @Benchmark
   @Threads(1)
   def wideReduceCoarse(bh: Blackhole, state: CoarseBenchState): Unit = {
-    implicit val scheduler = state.scheduler
-    val runTask            = createTest(state.term, state)
+    implicit val scheduler: Scheduler = state.scheduler
+    val runTask                       = createTest(state.term, state)
     bh.consume(processErrors(runTask.unsafeRunSync))
   }
 
   @Benchmark
+  @BenchmarkMode(Array(Mode.SingleShotTime))
+  @OutputTimeUnit(TimeUnit.MILLISECONDS)
   @Threads(1)
   def wideReduceFine(bh: Blackhole, state: FineBenchState): Unit = {
-    implicit val scheduler = state.scheduler
-    val runTask            = createTest(state.term, state)
-    bh.consume(processErrors(runTask.unsafeRunSync))
+    implicit val scheduler: Scheduler = state.scheduler
+    val runTask                       = createTest(state.term, state)
+    println("TEST")
+    bh.consume(processErrors(runTask.executeOn(scheduler).unsafeRunSync(scheduler)))
+    println("TEST DONE")
   }
 }
 
@@ -55,7 +60,7 @@ object WideBench {
     val rhoScriptSource: String    = "/rholang/wide.rho"
     import WideEvalBenchState._
 
-    implicit val scheduler: Scheduler = Scheduler.fixedPool(name = "wide-1", poolSize = 300)
+    implicit val scheduler: Scheduler = Scheduler.fixedPool(name = "wide-1", poolSize = 2000)
     lazy val dbDir: Path              = Files.createTempDirectory("rchain-storage-test-")
     val mapSize: Long                 = 1024L * 1024L * 1024L * 10L
 
@@ -83,7 +88,9 @@ object WideBench {
       //make sure we always start from clean rspace
 //      runtime.replaySpace.clear()
       runtime.space.clear()
+      println("SETUP")
       processErrors(Await.result(createTest(setupTerm, this).runAsync, Duration.Inf))
+      println("SETUP DONE")
     }
 
     @TearDown

@@ -10,8 +10,15 @@ class PureRSpace[F[_], C, P, E, A, R, K](space: IdISpace[C, P, E, A, R, K]) {
 
   def consume(channels: Seq[C], patterns: Seq[P], continuation: K, persist: Boolean)(
       implicit m: Match[P, E, A, R],
-      s: Sync[F]): F[Either[E, Option[(K, Seq[R])]]] =
-    s.delay(space.consume(channels, patterns, continuation, persist))
+      s: Sync[F]): F[Either[E, Option[(K, Seq[R])]]] = {
+    println("SCHEDULING CONSUME", channels)
+    s.delay {
+      println("CONSUME CHANNELS", channels)
+      val r = space.consume(channels, patterns, continuation, persist)
+      println("DONE CONSUME CHANNELS", channels)
+      r
+    }
+  }
 
   def install(channels: Seq[C], patterns: Seq[P], continuation: K)(
       implicit m: Match[P, E, A, R],
@@ -20,8 +27,13 @@ class PureRSpace[F[_], C, P, E, A, R, K](space: IdISpace[C, P, E, A, R, K]) {
 
   def produce(channel: C, data: A, persist: Boolean)(
       implicit m: Match[P, E, A, R],
-      s: Sync[F]): F[Either[E, Option[(K, Seq[R])]]] =
-    s.delay(space.produce(channel, data, persist))
+      s: Sync[F]): F[Either[E, Option[(K, Seq[R])]]] = {
+    println("SCHEDULING PRODUCE", channel)
+    s.delay {
+      println("PRODUCE CHANNELS", channel)
+      space.produce(channel, data, persist)
+    }
+  }
 
   def createCheckpoint()(s: Sync[F]): F[Checkpoint] = s.delay(space.createCheckpoint())
 

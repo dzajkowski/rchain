@@ -78,8 +78,8 @@ trait LMDBOps extends CloseOps {
         }
         throw ex
     } finally {
-      updateGauges()
       txn.close()
+//      updateGauges()
     }
 
   /** The methods:
