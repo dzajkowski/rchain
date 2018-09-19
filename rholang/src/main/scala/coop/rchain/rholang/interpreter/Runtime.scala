@@ -144,7 +144,7 @@ object Runtime {
   }
 
   // TODO: remove default store type
-  def create(dataDir: Path, mapSize: Long, storeType: StoreType = LMDB): Runtime = {
+  def create(dataDir: Path, mapSize: Long, storeType: StoreType = FineLockingLMDB): Runtime = {
     val (context, space, replaySpace) = setupRSpace(dataDir, mapSize, storeType)
 
     val errorLog                                  = new ErrorLog()
