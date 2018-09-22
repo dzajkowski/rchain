@@ -155,16 +155,15 @@ object BlockAPI {
     } yield mainChain
 
   private def getDataWithBlockInfo[F[_]: Monad: MultiParentCasper: Log: SafetyOracle: BlockStore](
-      runtimeManager: RuntimeManager,
+      runtimeManager: RuntimeManager[F],
       sortedListeningName: Channel,
       block: BlockMessage
   )(implicit channelCodec: Codec[Channel]): F[Option[DataWithBlockInfo]] =
     if (isListeningNameReduced(block, immutable.Seq(sortedListeningName))) {
       val stateHash =
         ProtoUtil.tuplespace(block).get
-      val data =
-        runtimeManager.getData(stateHash, sortedListeningName)
       for {
+        data      <- runtimeManager.getData(stateHash, sortedListeningName)
         blockInfo <- getBlockInfoWithoutTuplespace[F](block)
       } yield Option[DataWithBlockInfo](DataWithBlockInfo(data, Some(blockInfo)))
     } else {
@@ -172,19 +171,21 @@ object BlockAPI {
     }
 
   private def getContinuationsWithBlockInfo[F[_]: Monad: MultiParentCasper: Log: SafetyOracle: BlockStore](
-      runtimeManager: RuntimeManager,
+      runtimeManager: RuntimeManager[F],
       sortedListeningNames: immutable.Seq[Channel],
       block: BlockMessage
   )(implicit channelCodec: Codec[Channel]): F[Option[ContinuationsWithBlockInfo]] =
     if (isListeningNameReduced(block, sortedListeningNames)) {
       val stateHash =
         ProtoUtil.tuplespace(block).get
-      val continuations: Seq[(Seq[BindPattern], Par)] =
-        runtimeManager.getContinuation(stateHash, sortedListeningNames)
-      val continuationInfos = continuations.map(
-        continuation => WaitingContinuationInfo(continuation._1, Some(continuation._2))
-      )
       for {
+        continuations: Seq[(Seq[BindPattern], Par)] <- runtimeManager.getContinuation(
+                                                        stateHash,
+                                                        sortedListeningNames
+                                                      )
+        continuationInfos = continuations.map(
+          continuation => WaitingContinuationInfo(continuation._1, Some(continuation._2))
+        )
         blockInfo <- getBlockInfoWithoutTuplespace[F](block)
       } yield
         Option[ContinuationsWithBlockInfo](

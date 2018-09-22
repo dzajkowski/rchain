@@ -3,6 +3,7 @@ package coop.rchain.rholang.interpreter
 import java.nio.file.Files
 
 import com.google.protobuf.ByteString
+import coop.rchain.catscontrib.TaskContrib._
 import coop.rchain.crypto.codec.Base16
 import coop.rchain.crypto.hash.{Blake2b256, Blake2b512Random, Keccak256, Sha256}
 import coop.rchain.crypto.signatures.{Ed25519, Secp256k1}
@@ -17,7 +18,6 @@ import coop.rchain.models.testImplicits._
 import coop.rchain.rholang.interpreter.Runtime.RhoIStore
 import coop.rchain.rholang.interpreter.accounting.{CostAccount, CostAccountingAlg}
 import coop.rchain.rspace.Serialize
-import coop.rchain.rspace.internal.{Datum, Row}
 import coop.rchain.shared.PathOps._
 import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
@@ -219,7 +219,7 @@ class CryptoChannelsSpec
     val randomInt = scala.util.Random.nextInt
     val dbDir     = Files.createTempDirectory(s"rchain-storage-test-$randomInt")
     val size      = 1024L * 1024 * 10
-    val runtime   = Runtime.create(dbDir, size)
+    val runtime   = Runtime.create(dbDir, size).unsafeRunSync
 
     try {
       test((runtime.reducer, runtime.space.store))

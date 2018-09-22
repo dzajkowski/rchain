@@ -313,10 +313,12 @@ class FineGrainedReplayRSpace[F[_], C, P, E, A, R, K](store: IStore[C, P, A, K],
     }
   }
 
-  override def clear(): F[Unit] = syncF.delay {
-    replayData.update(const(ReplayData.empty))
-    super.clear()
-  }
+  override def clear(): F[Unit] =
+    syncF
+      .delay {
+        replayData.update(const(ReplayData.empty))
+      }
+      .flatMap(_ => super.clear())
 }
 
 object FineGrainedReplayRSpace {
@@ -327,8 +329,7 @@ object FineGrainedReplayRSpace {
       sp: Serialize[P],
       sa: Serialize[A],
       sk: Serialize[K],
-      sync: Sync[F],
-      monadF: Monad[F]
+      sync: Sync[F]
   ): F[FineGrainedReplayRSpace[F, C, P, E, A, R, K]] = {
 
     implicit val codecC: Codec[C] = sc.toCodec

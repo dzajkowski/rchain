@@ -91,7 +91,7 @@ object Interpreter {
       } else normalizedTerm.pure[M]
     }
 
-  def execute(runtime: Runtime, reader: Reader): Task[Runtime] =
+  def execute(runtime: Runtime[Task], reader: Reader): Task[Runtime[Task]] =
     for {
       term   <- Task.coeval(buildNormalizedTerm(reader)).attempt.raiseOnLeft
       errors <- evaluate(runtime, term).map(_.errors).attempt.raiseOnLeft
@@ -101,11 +101,11 @@ object Interpreter {
                  Task.raiseError(new RuntimeException(mkErrorMsg(errors)))
     } yield result
 
-  def evaluate(runtime: Runtime, normalizedTerm: Par): Task[EvaluateResult] = {
+  def evaluate(runtime: Runtime[Task], normalizedTerm: Par): Task[EvaluateResult] = {
     implicit val rand      = Blake2b512Random(128)
     val evaluatePhlosLimit = CostAccount(Integer.MAX_VALUE)
     for {
-      checkpoint     <- Task.now(runtime.space.createCheckpoint())
+      checkpoint     <- runtime.space.createCheckpoint()
       costAccounting <- CostAccountingAlg.of[Task](evaluatePhlosLimit)
       _              <- runtime.reducer.inj(normalizedTerm)(rand, costAccounting)
       errors         <- Task.now(runtime.readAndClearErrorVector())

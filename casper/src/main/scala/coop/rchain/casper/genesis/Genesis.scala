@@ -68,11 +68,11 @@ object Genesis {
       runtimeManager
     )
 
-  def withContracts(
+  def withContracts[F[_]](
       blessedTerms: List[Deploy],
       initial: BlockMessage,
       startHash: StateHash,
-      runtimeManager: RuntimeManager
+      runtimeManager: RuntimeManager[F]
   )(implicit scheduler: Scheduler): BlockMessage = {
     val (stateHash, processedDeploys) = runtimeManager.computeState(startHash, blessedTerms)
 
@@ -124,7 +124,7 @@ object Genesis {
       numValidators: Int,
       genesisPath: Path,
       maybeWalletsPath: Option[String],
-      runtimeManager: RuntimeManager,
+      runtimeManager: RuntimeManager[F],
       shardId: String,
       deployTimestamp: Option[Long]
   )(implicit scheduler: Scheduler): F[BlockMessage] =

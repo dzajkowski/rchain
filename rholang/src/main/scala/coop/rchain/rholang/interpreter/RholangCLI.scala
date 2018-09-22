@@ -4,6 +4,7 @@ import java.io.{BufferedOutputStream, FileOutputStream, FileReader, StringReader
 import java.nio.file.{Files, Path}
 import java.util.concurrent.TimeoutException
 
+import coop.rchain.catscontrib.TaskContrib._
 import coop.rchain.models._
 import coop.rchain.rholang.interpreter.Interpreter.EvaluateResult
 import coop.rchain.rholang.interpreter.Runtime.RhoIStore
@@ -51,7 +52,7 @@ object RholangCLI {
 
     val conf = new Conf(args)
 
-    val runtime = Runtime.create(conf.data_dir(), conf.map_size())
+    val runtime = Runtime.create(conf.data_dir(), conf.map_size()).unsafeRunSync
 
     try {
       if (conf.files.supplied) {
@@ -92,7 +93,7 @@ object RholangCLI {
     }
 
   @tailrec
-  def repl(runtime: Runtime)(implicit scheduler: Scheduler): Unit = {
+  def repl(runtime: Runtime[Task])(implicit scheduler: Scheduler): Unit = {
     printPrompt()
     Option(scala.io.StdIn.readLine()) match {
       case Some(line) =>
@@ -111,7 +112,7 @@ object RholangCLI {
     repl(runtime)
   }
 
-  def processFile(conf: Conf, runtime: Runtime, fileName: String)(
+  def processFile(conf: Conf, runtime: Runtime[Task], fileName: String)(
       implicit scheduler: Scheduler
   ): Unit = {
     val processTerm: Par => Unit =
@@ -162,7 +163,7 @@ object RholangCLI {
     println(s"Compiled $fileName to $binaryFileName")
   }
 
-  def evaluatePar(runtime: Runtime)(par: Par)(implicit scheduler: Scheduler): Unit = {
+  def evaluatePar(runtime: Runtime[Task])(par: Par)(implicit scheduler: Scheduler): Unit = {
     val evaluatorTask =
       for {
         _      <- Task.now(printNormalizedTerm(par))

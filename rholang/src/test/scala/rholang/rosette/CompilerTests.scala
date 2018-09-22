@@ -3,7 +3,9 @@ package rholang.rosette
 import java.io.FileReader
 import java.nio.file.{Files, Path, Paths}
 
+import coop.rchain.catscontrib.TaskContrib._
 import coop.rchain.rholang.interpreter.{Interpreter, Runtime}
+import monix.eval.Task
 import monix.execution.Scheduler.Implicits.global
 import org.scalatest.{FunSuite, Matchers}
 
@@ -16,7 +18,7 @@ class CompilerTests extends FunSuite with Matchers {
   val tmpPrefix   = "rspace-store-"
   val maxDuration = 5.seconds
 
-  def runtime = Runtime.create(Files.createTempDirectory(tmpPrefix), mapSize)
+  def runtime = Runtime.create(Files.createTempDirectory(tmpPrefix), mapSize).unsafeRunSync
 
   val testFiles: Iterator[Path] =
     Files.walk(Paths.get(getClass.getResource("/tests").getPath)).iterator().asScala
@@ -41,7 +43,7 @@ class CompilerTests extends FunSuite with Matchers {
     }
   }
 
-  private def execute(file: Path): Either[Throwable, Runtime] = {
+  private def execute(file: Path): Either[Throwable, Runtime[Task]] = {
     val future = Interpreter.execute(runtime, new FileReader(file.toString)).attempt.runAsync
     Await.result(future, maxDuration)
   }

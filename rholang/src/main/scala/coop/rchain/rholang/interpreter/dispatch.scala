@@ -62,7 +62,7 @@ class RholangOnlyDispatcher[M[_]] private (reducer: => Reduce[M])(implicit s: Sy
 
 object RholangOnlyDispatcher {
 
-  def create[M[_], F[_]](tuplespace: RhoISpace, urnMap: Map[String, Par] = Map.empty)(
+  def create[M[_], F[_]](tuplespace: RhoISpace[M], urnMap: Map[String, Par] = Map.empty)(
       implicit
       parallel: Parallel[M, F],
       s: Sync[M],
@@ -117,7 +117,7 @@ class RholangAndScalaDispatcher[M[_]] private (
 object RholangAndScalaDispatcher {
 
   def create[M[_], F[_]](
-      tuplespace: RhoISpace,
+      tuplespace: RhoISpace[M],
       dispatchTable: => Map[Long, Function1[Seq[ListChannelWithRandom], M[Unit]]],
       urnMap: Map[String, Par]
   )(

@@ -2,9 +2,11 @@ package coop.rchain.rholang.interpreter
 
 import java.nio.file.{Files, Path}
 
-import cats.Id
+import cats.{Applicative, Id, Traverse}
 import cats.effect.Sync
 import cats.mtl.FunctorTell
+import cats.implicits._
+import cats.effect.implicits._
 import com.google.protobuf.ByteString
 import coop.rchain.models.Channel.ChannelInstance.{ChanVar, Quote}
 import coop.rchain.models.Expr.ExprInstance.GString
@@ -25,11 +27,11 @@ import monix.eval.Task
 
 import scala.collection.immutable
 
-class Runtime private (
-    val reducer: Reduce[Task],
-    val replayReducer: Reduce[Task],
-    val space: RhoISpace,
-    val replaySpace: RhoReplayISpace,
+class Runtime[F[_]] private (
+    val reducer: Reduce[F],
+    val replayReducer: Reduce[F],
+    val space: RhoISpace[F],
+    val replaySpace: RhoReplayISpace[F],
     var errorLog: ErrorLog,
     val context: RhoContext
 ) {
@@ -43,9 +45,9 @@ class Runtime private (
 
 object Runtime {
 
-  type RhoISpace          = TCPARK[Id, ISpace]
-  type RhoPureSpace[F[_]] = TCPARK[F, PureRSpace]
-  type RhoReplayISpace    = TCPARK[Id, IReplaySpace]
+  type RhoISpace[F[_]]       = TCPARK[F, ISpace]
+  type RhoPureSpace[F[_]]    = TCPARK[F, PureRSpace]
+  type RhoReplayISpace[F[_]] = TCPARK[F, IReplaySpace]
 
   type RhoIStore  = CPAK[IStore]
   type RhoContext = CPAK[Context]
@@ -105,41 +107,47 @@ object Runtime {
     val REG_PUBLIC_REGISTER_INSERT_CALLBACK: Long = 19L
   }
 
-  private def introduceSystemProcesses(
-      space: RhoISpace,
-      replaySpace: RhoISpace,
+  private def introduceSystemProcesses[F[_]: Applicative](
+      space: RhoISpace[F],
+      replaySpace: RhoISpace[F],
       processes: immutable.Seq[(Name, Arity, Remainder, Ref)]
-  ): Seq[Option[(TaggedContinuation, Seq[ListChannelWithRandom])]] =
-    processes.flatMap {
-      case (name, arity, remainder, ref) =>
-        val channels = List(Channel(Quote(name)))
-        val patterns = List(
-          BindPattern(
-            (0 until arity).map[Channel, Seq[Channel]](i => ChanVar(FreeVar(i))),
-            remainder,
-            freeCount = arity
+  ): F[Seq[Option[(TaggedContinuation, Seq[ListChannelWithRandom])]]] = {
+    val q: immutable.Seq[F[Option[(TaggedContinuation, immutable.Seq[ListChannelWithRandom])]]] =
+      processes.flatMap {
+        case (name, arity, remainder, ref) =>
+          val channels = List(Channel(Quote(name)))
+          val patterns = List(
+            BindPattern(
+              (0 until arity).map[Channel, Seq[Channel]](i => ChanVar(FreeVar(i))),
+              remainder,
+              freeCount = arity
+            )
           )
-        )
-        val continuation = TaggedContinuation(ScalaBodyRef(ref))
-        Seq(
-          space.install(channels, patterns, continuation),
-          replaySpace.install(channels, patterns, continuation)
-        )
-    }
+          val continuation = TaggedContinuation(ScalaBodyRef(ref))
+          Seq(
+            space.install(channels, patterns, continuation),
+            replaySpace.install(channels, patterns, continuation)
+          )
+      }
+    q.toList.sequence.map(_.toSeq)
+  }
 
   /**
     * TODO this needs to go away when double locking is good enough
     */
-  def setupRSpace(
+  def setupRSpace[F[_]: Sync](
       dataDir: Path,
       mapSize: Long,
       storeType: StoreType
-  ): (RhoContext, RhoISpace, RhoReplayISpace) = {
-    def createCoarseRSpace(context: RhoContext): (RhoContext, RhoISpace, RhoReplayISpace) = {
-      val space: RhoISpace             = RSpace.create(context, Branch.MASTER)
-      val replaySpace: RhoReplayISpace = ReplayRSpace.create(context, Branch.REPLAY)
-      (context, space, replaySpace)
-    }
+  ): F[(RhoContext, RhoISpace[F], RhoReplayISpace[F])] = {
+    def createCoarseRSpace(
+        context: RhoContext
+    ): F[(RhoContext, RhoISpace[F], RhoReplayISpace[F])] =
+      RSpace.create(context, Branch.MASTER).flatMap { space: RhoISpace[F] =>
+        ReplayRSpace.create(context, Branch.REPLAY).map { replaySpace: RhoReplayISpace[F] =>
+          (context, space, replaySpace)
+        }
+      }
     storeType match {
       case InMem =>
         createCoarseRSpace(Context.createInMemory())
@@ -152,29 +160,28 @@ object Runtime {
         if (Files.notExists(dataDir)) {
           Files.createDirectories(dataDir)
         }
-        implicit val syncF: Sync[Id] = coop.rchain.catscontrib.effect.implicits.syncId
-        val context: RhoContext      = Context.createFineGrained(dataDir, mapSize)
-        val store                    = context.createStore(Branch.MASTER)
-        // TODO clean this up
-        val space: RhoISpace = RSpace.createFineGrained[
-          Id,
-          Channel,
-          BindPattern,
-          OutOfPhlogistonsError.type,
-          ListChannelWithRandom,
-          ListChannelWithRandom,
-          TaggedContinuation
-        ](store, Branch.MASTER)
-        val replaySpace: RhoReplayISpace = FineGrainedReplayRSpace.create[
-          Id,
-          Channel,
-          BindPattern,
-          OutOfPhlogistonsError.type,
-          ListChannelWithRandom,
-          ListChannelWithRandom,
-          TaggedContinuation
-        ](context, Branch.REPLAY)
-        (context, space, replaySpace)
+        val context: RhoContext = Context.createFineGrained(dataDir, mapSize)
+        val store               = context.createStore(Branch.MASTER)
+        for {
+          space <- RSpace.createFineGrained[
+                    F,
+                    Channel,
+                    BindPattern,
+                    OutOfPhlogistonsError.type,
+                    ListChannelWithRandom,
+                    ListChannelWithRandom,
+                    TaggedContinuation
+                  ](store, Branch.MASTER)
+          replaySpace <- FineGrainedReplayRSpace.create[
+                          F,
+                          Channel,
+                          BindPattern,
+                          OutOfPhlogistonsError.type,
+                          ListChannelWithRandom,
+                          ListChannelWithRandom,
+                          TaggedContinuation
+                        ](context, Branch.REPLAY)
+        } yield (context, space, replaySpace)
       case Mixed =>
         if (Files.notExists(dataDir)) {
           Files.createDirectories(dataDir)
@@ -184,81 +191,91 @@ object Runtime {
   }
 
   // TODO: remove default store type
-  def create(dataDir: Path, mapSize: Long, storeType: StoreType = FineGrainedLMDB): Runtime = {
-    val (context, space, replaySpace) = setupRSpace(dataDir, mapSize, storeType)
-
-    val errorLog                                  = new ErrorLog()
-    implicit val ft: FunctorTell[Task, Throwable] = errorLog
-
-    def dispatchTableCreator(
-        space: RhoISpace,
-        dispatcher: RhoDispatch[Task],
-        registry: Registry[Task]
-    ): RhoDispatchMap = {
-      import BodyRefs._
-      Map(
-        STDOUT                     -> SystemProcesses.stdout,
-        STDOUT_ACK                 -> SystemProcesses.stdoutAck(space, dispatcher),
-        STDERR                     -> SystemProcesses.stderr,
-        STDERR_ACK                 -> SystemProcesses.stderrAck(space, dispatcher),
-        ED25519_VERIFY             -> SystemProcesses.ed25519Verify(space, dispatcher),
-        SHA256_HASH                -> SystemProcesses.sha256Hash(space, dispatcher),
-        KECCAK256_HASH             -> SystemProcesses.keccak256Hash(space, dispatcher),
-        BLAKE2B256_HASH            -> SystemProcesses.blake2b256Hash(space, dispatcher),
-        SECP256K1_VERIFY           -> SystemProcesses.secp256k1Verify(space, dispatcher),
-        REG_LOOKUP                 -> (registry.lookup(_)),
-        REG_LOOKUP_CALLBACK        -> (registry.lookupCallback(_)),
-        REG_INSERT                 -> (registry.insert(_)),
-        REG_INSERT_CALLBACK        -> (registry.insertCallback(_)),
-        REG_DELETE                 -> (registry.delete(_)),
-        REG_DELETE_ROOT_CALLBACK   -> (registry.deleteRootCallback(_)),
-        REG_DELETE_CALLBACK        -> (registry.deleteCallback(_)),
-        REG_PUBLIC_LOOKUP          -> (registry.publicLookup(_)),
-        REG_PUBLIC_REGISTER_RANDOM -> (registry.publicRegisterRandom(_))
-      )
-    }
-
+  def create(
+      dataDir: Path,
+      mapSize: Long,
+      storeType: StoreType = FineGrainedLMDB
+  ): Task[Runtime[Task]] = {
     def byteName(b: Byte): Par = GPrivate(ByteString.copyFrom(Array[Byte](b)))
+    for {
+      res         <- setupRSpace[Task](dataDir, mapSize, storeType)
+      context     = res._1
+      space       = res._2
+      replaySpace = res._3
+      procDefs = {
+        import BodyRefs._
+        List[(Name, Arity, Remainder, Ref)](
+          (byteName(0), 1, None, STDOUT),
+          (byteName(1), 2, None, STDOUT_ACK),
+          (byteName(2), 1, None, STDERR),
+          (byteName(3), 2, None, STDERR_ACK),
+          (GString("ed25519Verify"), 4, None, ED25519_VERIFY),
+          (GString("sha256Hash"), 2, None, SHA256_HASH),
+          (GString("keccak256Hash"), 2, None, KECCAK256_HASH),
+          (GString("blake2b256Hash"), 2, None, BLAKE2B256_HASH),
+          (GString("secp256k1Verify"), 4, None, SECP256K1_VERIFY)
+        )
+      }
+      res <- introduceSystemProcesses(
+              space,
+              replaySpace,
+              procDefs
+            )
+    } yield {
+      val errorLog = new ErrorLog()
 
-    val urnMap: Map[String, Par] = Map(
-      "rho:io:stdout"    -> byteName(0),
-      "rho:io:stdoutAck" -> byteName(1),
-      "rho:io:stderr"    -> byteName(2),
-      "rho:io:stderrAck" -> byteName(3)
-    )
+      implicit val ft: FunctorTell[Task, Throwable] = errorLog
 
-    lazy val dispatchTable: RhoDispatchMap =
-      dispatchTableCreator(space, dispatcher, registry)
+      def dispatchTableCreator(
+          space: RhoISpace[Task],
+          dispatcher: RhoDispatch[Task],
+          registry: Registry[Task]
+      ): RhoDispatchMap = {
+        import BodyRefs._
+        Map(
+          STDOUT                     -> SystemProcesses.stdout,
+          STDOUT_ACK                 -> SystemProcesses.stdoutAck(space, dispatcher),
+          STDERR                     -> SystemProcesses.stderr,
+          STDERR_ACK                 -> SystemProcesses.stderrAck(space, dispatcher),
+          ED25519_VERIFY             -> SystemProcesses.ed25519Verify(space, dispatcher),
+          SHA256_HASH                -> SystemProcesses.sha256Hash(space, dispatcher),
+          KECCAK256_HASH             -> SystemProcesses.keccak256Hash(space, dispatcher),
+          BLAKE2B256_HASH            -> SystemProcesses.blake2b256Hash(space, dispatcher),
+          SECP256K1_VERIFY           -> SystemProcesses.secp256k1Verify(space, dispatcher),
+          REG_LOOKUP                 -> (registry.lookup(_)),
+          REG_LOOKUP_CALLBACK        -> (registry.lookupCallback(_)),
+          REG_INSERT                 -> (registry.insert(_)),
+          REG_INSERT_CALLBACK        -> (registry.insertCallback(_)),
+          REG_DELETE                 -> (registry.delete(_)),
+          REG_DELETE_ROOT_CALLBACK   -> (registry.deleteRootCallback(_)),
+          REG_DELETE_CALLBACK        -> (registry.deleteCallback(_)),
+          REG_PUBLIC_LOOKUP          -> (registry.publicLookup(_)),
+          REG_PUBLIC_REGISTER_RANDOM -> (registry.publicRegisterRandom(_))
+        )
+      }
 
-    lazy val replayDispatchTable: RhoDispatchMap =
-      dispatchTableCreator(replaySpace, replayDispatcher, replayRegistry)
-
-    lazy val (dispatcher, reducer, registry) =
-      RholangAndScalaDispatcher.create(space, dispatchTable, urnMap)
-
-    lazy val (replayDispatcher, replayReducer, replayRegistry) =
-      RholangAndScalaDispatcher.create(replaySpace, replayDispatchTable, urnMap)
-
-    val procDefs: immutable.Seq[(Name, Arity, Remainder, Ref)] = {
-      import BodyRefs._
-      List(
-        (byteName(0), 1, None, STDOUT),
-        (byteName(1), 2, None, STDOUT_ACK),
-        (byteName(2), 1, None, STDERR),
-        (byteName(3), 2, None, STDERR_ACK),
-        (GString("ed25519Verify"), 4, None, ED25519_VERIFY),
-        (GString("sha256Hash"), 2, None, SHA256_HASH),
-        (GString("keccak256Hash"), 2, None, KECCAK256_HASH),
-        (GString("blake2b256Hash"), 2, None, BLAKE2B256_HASH),
-        (GString("secp256k1Verify"), 4, None, SECP256K1_VERIFY)
+      val urnMap: Map[String, Par] = Map(
+        "rho:io:stdout"    -> byteName(0),
+        "rho:io:stdoutAck" -> byteName(1),
+        "rho:io:stderr"    -> byteName(2),
+        "rho:io:stderrAck" -> byteName(3)
       )
+
+      lazy val dispatchTable: RhoDispatchMap =
+        dispatchTableCreator(space, dispatcher, registry)
+
+      lazy val replayDispatchTable: RhoDispatchMap =
+        dispatchTableCreator(replaySpace, replayDispatcher, replayRegistry)
+
+      lazy val (dispatcher, reducer, registry) =
+        RholangAndScalaDispatcher.create(space, dispatchTable, urnMap)
+
+      lazy val (replayDispatcher, replayReducer, replayRegistry) =
+        RholangAndScalaDispatcher.create(replaySpace, replayDispatchTable, urnMap)
+
+      assert(res.forall(_.isEmpty))
+
+      new Runtime(reducer, replayReducer, space, replaySpace, errorLog, context)
     }
-
-    val res: Seq[Option[(TaggedContinuation, Seq[ListChannelWithRandom])]] =
-      introduceSystemProcesses(space, replaySpace, procDefs)
-
-    assert(res.forall(_.isEmpty))
-
-    new Runtime(reducer, replayReducer, space, replaySpace, errorLog, context)
   }
 }

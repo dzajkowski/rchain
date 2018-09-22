@@ -27,7 +27,7 @@ import scala.collection.immutable.HashSet
 import scala.collection.mutable
 
 class MultiParentCasperImpl[F[_]: Sync: Capture: ConnectionsCell: TransportLayer: Log: Time: ErrorHandler: SafetyOracle: BlockStore: RPConfAsk](
-    runtimeManager: RuntimeManager,
+    runtimeManager: RuntimeManager[F],
     validatorId: Option[ValidatorIdentity],
     genesis: BlockMessage,
     initialDag: BlockDag,

@@ -3,6 +3,7 @@ package coop.rchain.rholang
 import java.io.StringReader
 import java.nio.file.Files
 
+import coop.rchain.catscontrib.TaskContrib._
 import coop.rchain.rholang.interpreter.storage.StoragePrinter
 import coop.rchain.rholang.interpreter.{Interpreter, Runtime}
 import monix.execution.Scheduler.Implicits.global
@@ -16,7 +17,7 @@ class InterpreterSpec extends FlatSpec with Matchers {
   val tmpPrefix   = "rspace-store-"
   val maxDuration = 5.seconds
 
-  val runtime = Runtime.create(Files.createTempDirectory(tmpPrefix), mapSize)
+  val runtime = Runtime.create(Files.createTempDirectory(tmpPrefix), mapSize).unsafeRunSync
 
   "Interpreter" should "restore RSpace to its prior state after evaluation error" in {
     val initStorage = storageContents()

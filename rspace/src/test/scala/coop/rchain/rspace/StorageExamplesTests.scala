@@ -2,10 +2,12 @@ package coop.rchain.rspace
 
 import java.nio.file.{Files, Path}
 
+import cats.Id
+import cats.effect.Sync
 import coop.rchain.rspace.examples.AddressBookExample._
 import coop.rchain.rspace.examples.AddressBookExample.implicits._
-import coop.rchain.rspace.history.{initialize, Branch, ITrieStore, InMemoryTrieStore, LMDBTrieStore}
-import coop.rchain.rspace.internal.{codecGNAT, GNAT}
+import coop.rchain.rspace.history.{Branch, ITrieStore, InMemoryTrieStore, LMDBTrieStore, initialize}
+import coop.rchain.rspace.internal.{GNAT, codecGNAT}
 import coop.rchain.rspace.util._
 import coop.rchain.shared.PathOps._
 import org.scalatest.BeforeAndAfterAll
@@ -298,6 +300,8 @@ class InMemoryStoreStorageExamplesTestsBase
       implicits.serializeEntriesCaptor.toCodec
     )
 
+    implicit val syncF: Sync[Id] = coop.rchain.catscontrib.effect.implicits.syncId
+
     val branch = Branch("inmem")
 
     val trieStore =
@@ -308,7 +312,7 @@ class InMemoryStoreStorageExamplesTestsBase
     ], Channel, Pattern, Entry, EntriesCaptor](trieStore, branch)
 
     val testSpace =
-      RSpace.create[Channel, Pattern, Nothing, Entry, Entry, EntriesCaptor](testStore, branch)
+      RSpace.create[Id, Channel, Pattern, Nothing, Entry, Entry, EntriesCaptor](testStore, branch)
     testStore.withTxn(testStore.createTxnWrite())(testStore.clear)
     trieStore.withTxn(trieStore.createTxnWrite())(trieStore.clear)
     initialize(trieStore, branch)
@@ -329,6 +333,7 @@ class LMDBStoreStorageExamplesTestBase
     extends StorageTestsBase[Channel, Pattern, Nothing, Entry, EntriesCaptor]
     with BeforeAndAfterAll {
 
+  implicit val syncF: Sync[Id] = coop.rchain.catscontrib.effect.implicits.syncId
   val dbDir: Path    = Files.createTempDirectory("rchain-storage-test-")
   val mapSize: Long  = 1024L * 1024L * 1024L
   val noTls: Boolean = false
@@ -337,7 +342,7 @@ class LMDBStoreStorageExamplesTestBase
     val context   = Context.create[Channel, Pattern, Entry, EntriesCaptor](dbDir, mapSize, noTls)
     val testStore = LMDBStore.create[Channel, Pattern, Entry, EntriesCaptor](context)
     val testSpace =
-      RSpace.create[Channel, Pattern, Nothing, Entry, Entry, EntriesCaptor](
+      RSpace.create[Id, Channel, Pattern, Nothing, Entry, Entry, EntriesCaptor](
         testStore,
         Branch.MASTER
       )

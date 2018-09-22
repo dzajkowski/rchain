@@ -33,7 +33,7 @@ object InterpreterUtil {
       b: BlockMessage,
       dag: BlockDag,
       knownStateHashes: Set[StateHash],
-      runtimeManager: RuntimeManager
+      runtimeManager: RuntimeManager[F]
   )(
       implicit scheduler: Scheduler
   ): F[(Either[BlockException, Option[StateHash]], Set[StateHash])] = {
@@ -63,7 +63,7 @@ object InterpreterUtil {
 
   private def processPossiblePreStateHash[F[_]: Monad: Log: BlockStore](
       knownStateHashes: Set[StateHash],
-      runtimeManager: RuntimeManager,
+      runtimeManager: RuntimeManager[F],
       tsHash: Option[StateHash],
       internalDeploys: Seq[InternalProcessedDeploy],
       possiblePreStateHash: Either[Throwable, StateHash],
@@ -120,7 +120,7 @@ object InterpreterUtil {
       deploys: Seq[Deploy],
       dag: BlockDag,
       knownStateHashes: Set[StateHash],
-      runtimeManager: RuntimeManager
+      runtimeManager: RuntimeManager[F]
   )(
       implicit scheduler: Scheduler
   ): F[(Either[Throwable, (StateHash, Seq[InternalProcessedDeploy])], Set[StateHash])] =
@@ -141,7 +141,7 @@ object InterpreterUtil {
       parents: Seq[BlockMessage],
       dag: BlockDag,
       knownStateHashes: Set[StateHash],
-      runtimeManager: RuntimeManager
+      runtimeManager: RuntimeManager[F]
   )(implicit scheduler: Scheduler): F[(Either[Throwable, StateHash], Set[StateHash])] = {
     val parentTuplespaces = parents.flatMap(p => ProtoUtil.tuplespace(p).map(p -> _))
 
@@ -204,7 +204,7 @@ object InterpreterUtil {
       genesis: BlockMessage,
       dag: BlockDag,
       knownStateHashes: Set[StateHash],
-      runtimeManager: RuntimeManager
+      runtimeManager: RuntimeManager[F]
   )(
       implicit scheduler: Scheduler
   ): F[(Either[Throwable, (StateHash, Seq[InternalProcessedDeploy])], Set[StateHash])] =

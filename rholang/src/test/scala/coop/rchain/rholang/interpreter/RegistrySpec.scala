@@ -47,7 +47,8 @@ trait RegistryTester extends PersistentStoreTester {
   def withRegistryAndTestSpace[R](
       f: (
           Reduce[Task],
-          IdISpace[
+          ISpace[
+            Task,
             Channel,
             BindPattern,
             OutOfPhlogistonsError.type,

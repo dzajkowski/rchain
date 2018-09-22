@@ -50,7 +50,7 @@ trait MultiParentCasper[F[_]] extends Casper[F, IndexedSeq[BlockMessage]] {
   def lastFinalizedBlock: F[BlockMessage]
   def storageContents(hash: ByteString): F[String]
   // TODO: Refactor hashSetCasper to take a RuntimeManager[F] just like BlockStore[F]
-  def getRuntimeManager: F[Option[RuntimeManager]]
+  def getRuntimeManager: F[Option[RuntimeManager[F]]]
 }
 
 object MultiParentCasper extends MultiParentCasperInstances {
@@ -62,7 +62,7 @@ sealed abstract class MultiParentCasperInstances {
   private implicit val logSource: LogSource = LogSource(this.getClass)
 
   def hashSetCasper[F[_]: Sync: Capture: ConnectionsCell: TransportLayer: Log: Time: ErrorHandler: SafetyOracle: BlockStore: RPConfAsk](
-      runtimeManager: RuntimeManager,
+      runtimeManager: RuntimeManager[F],
       validatorId: Option[ValidatorIdentity],
       genesis: BlockMessage,
       shardId: String

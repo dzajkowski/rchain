@@ -131,6 +131,8 @@ class InMemoryStoreTestsBase
     implicit val codecK: Codec[StringsCaptor] = implicitly[Serialize[StringsCaptor]].toCodec
     val branch                                = Branch("inmem")
 
+    implicit val syncF: Sync[Id] = coop.rchain.catscontrib.effect.implicits.syncId
+
     val trieStore =
       InMemoryTrieStore.create[Blake2b256Hash, GNAT[String, Pattern, String, StringsCaptor]]()
 
@@ -139,7 +141,7 @@ class InMemoryStoreTestsBase
     ], String, Pattern, String, StringsCaptor](trieStore, branch)
 
     val testSpace =
-      RSpace.create[String, Pattern, Nothing, String, String, StringsCaptor](testStore, branch)
+      RSpace.create[Id, String, Pattern, Nothing, String, String, StringsCaptor](testStore, branch)
     testStore.withTxn(testStore.createTxnWrite()) { txn =>
       testStore.withTrieTxn(txn) { trieTxn =>
         testStore.clear(txn)
@@ -172,11 +174,13 @@ class LMDBStoreTestsBase
     implicit val codecP: Codec[Pattern]       = implicitly[Serialize[Pattern]].toCodec
     implicit val codecK: Codec[StringsCaptor] = implicitly[Serialize[StringsCaptor]].toCodec
 
+    implicit val syncF: Sync[Id] = coop.rchain.catscontrib.effect.implicits.syncId
+
     val testBranch = Branch("test")
     val env        = Context.create[String, Pattern, String, StringsCaptor](dbDir, mapSize)
     val testStore  = LMDBStore.create[String, Pattern, String, StringsCaptor](env, testBranch)
     val testSpace =
-      RSpace.create[String, Pattern, Nothing, String, String, StringsCaptor](testStore, testBranch)
+      RSpace.create[Id, String, Pattern, Nothing, String, String, StringsCaptor](testStore, testBranch)
     testStore.withTxn(testStore.createTxnWrite()) { txn =>
       testStore.withTrieTxn(txn) { trieTxn =>
         testStore.clear(txn)
@@ -210,6 +214,8 @@ class MixedStoreTestsBase
     implicit val codecP: Codec[Pattern]       = implicitly[Serialize[Pattern]].toCodec
     implicit val codecK: Codec[StringsCaptor] = implicitly[Serialize[StringsCaptor]].toCodec
 
+    implicit val syncF: Sync[Id] = coop.rchain.catscontrib.effect.implicits.syncId
+
     val testBranch = Branch("test")
     val env        = Context.createMixed[String, Pattern, String, StringsCaptor](dbDir, mapSize)
     val testStore = InMemoryStore
@@ -219,7 +225,7 @@ class MixedStoreTestsBase
       )
 
     val testSpace =
-      RSpace.create[String, Pattern, Nothing, String, String, StringsCaptor](testStore, testBranch)
+      RSpace.create[Id, String, Pattern, Nothing, String, String, StringsCaptor](testStore, testBranch)
     testStore.withTxn(testStore.createTxnWrite()) { txn =>
       testStore.withTrieTxn(txn) { trieTxn =>
         testStore.clear(txn)
