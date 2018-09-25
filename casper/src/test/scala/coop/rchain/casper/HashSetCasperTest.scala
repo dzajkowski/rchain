@@ -56,7 +56,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   //put a new casper instance at the start of each
   //test since we cannot reset it
   "HashSetCasper" should "accept deploys" in {
-    val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
     import node._
 
     val deploy = ProtoUtil.basicDeployData(0)
@@ -69,8 +73,12 @@ class HashSetCasperTest extends FlatSpec with Matchers {
 
   it should "not allow multiple threads to process the same block" in {
     val scheduler = Scheduler.fixedPool("three-threads", 3)
-    val node      = HashSetCasperTestNode.standaloneEff(genesis, validatorKeys.head)(scheduler)
-    val casper    = node.casperEff
+    val node = HashSetCasperTestNode.standaloneEff(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )(scheduler)
+    val casper = node.casperEff
 
     val deploy = ProtoUtil.basicDeployData(0)
     val testProgram = for {
@@ -94,7 +102,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "create blocks based on deploys" in {
-    val node            = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
     implicit val casper = node.casperEff
 
     val deploy = ProtoUtil.basicDeployData(0)
@@ -114,7 +126,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "accept signed blocks" in {
-    val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
     import node._
 
     val deploy = ProtoUtil.basicDeployData(0)
@@ -139,7 +155,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "be able to create a chain of blocks from different deploys" in {
-    val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
     import node._
 
     val start = System.currentTimeMillis()
@@ -169,7 +189,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "allow multiple deploys in a single block" in {
-    val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
     import node._
 
     val startTime = System.currentTimeMillis()
@@ -185,7 +209,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "reject unsigned blocks" in {
-    val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
     import node._
 
     val Created(block) = MultiParentCasper[Id].deploy(ProtoUtil.basicDeployData(0)) *> MultiParentCasper[
@@ -203,7 +231,7 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "reject blocks not from bonded validators" in {
-    val node = HashSetCasperTestNode.standalone(genesis, otherSk)
+    val node = HashSetCasperTestNode.standalone(genesis, otherSk, storageSize = 1024L * 1024L * 20L)
     import node._
 
     val Created(signedBlock) = MultiParentCasper[Id].deploy(ProtoUtil.basicDeployData(0)) *> MultiParentCasper[
@@ -220,7 +248,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "propose blocks it adds to peers" in {
-    val nodes      = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(2),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
     val deployData = ProtoUtil.basicDeployData(0)
 
     val Created(signedBlock) = nodes(0).casperEff
@@ -242,7 +274,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "add a valid block from peer" in {
-    val nodes      = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(2),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
     val deployData = ProtoUtil.basicDeployData(1)
 
     val Created(signedBlock1Prime) = nodes(0).casperEff
@@ -263,7 +299,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "handle multi-parent blocks correctly" in {
-    val nodes = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(2),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
     val deploys = Vector(
       ProtoUtil.basicDeployData(0),
       ProtoUtil.sourceDeploy("@1!(1) | for(@x <- @1){ @1!(x) }", System.currentTimeMillis()),
@@ -302,7 +342,7 @@ class HashSetCasperTest extends FlatSpec with Matchers {
 
   it should "allow bonding" in {
     val nodes =
-      HashSetCasperTestNode.network(validatorKeys, genesis, storageSize = 1024L * 1024 * 10)
+      HashSetCasperTestNode.network(validatorKeys, genesis, storageSize = 1024L * 1024 * 20)
     implicit val runtimeManager = nodes(0).runtimeManager
     val pubKey                  = Base16.encode(ethPubKeys.head.bytes.drop(1))
     val secKey                  = ethPivKeys.head.bytes
@@ -350,7 +390,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "reject addBlock when there exist deploy by the same (user, millisecond timestamp) in the chain" in {
-    val nodes = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(2),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
 
     val deployDatas = (0 to 2).map(i => ProtoUtil.basicDeployData(i))
     val deployPrim0 = deployDatas(1)
@@ -398,7 +442,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "ask peers for blocks it is missing" in {
-    val nodes = HashSetCasperTestNode.network(validatorKeys.take(3), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(3),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
     val deployDatas = Vector(
       "for(_ <- @1){ Nil } | @1!(1)",
       "@2!(2)"
@@ -439,7 +487,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "ignore adding equivocation blocks" in {
-    val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
+    val node = HashSetCasperTestNode.standalone(
+      genesis,
+      validatorKeys.head,
+      storageSize = 1024L * 1024L * 20L
+    )
 
     // Creates a pair that constitutes equivocation blocks
     val Created(signedBlock1)      = node.casperEff.deploy(ProtoUtil.basicDeployData(0)) *> node.casperEff.createBlock
@@ -460,7 +512,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
 
   // See [[/docs/casper/images/minimal_equivocation_neglect.png]] but cross out genesis block
   it should "not ignore equivocation blocks that are required for parents of proper nodes" in {
-    val nodes       = HashSetCasperTestNode.network(validatorKeys.take(3), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(3),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
     val deployDatas = (0 to 5).map(i => ProtoUtil.basicDeployData(i))
 
     // Creates a pair that constitutes equivocation blocks
@@ -531,7 +587,11 @@ class HashSetCasperTest extends FlatSpec with Matchers {
   }
 
   it should "prepare to slash an block that includes a invalid block pointer" in {
-    val nodes           = HashSetCasperTestNode.network(validatorKeys.take(3), genesis)
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(3),
+      genesis,
+      storageSize = 1024L * 1024L * 20L
+    )
     val deploys         = (0 to 5).map(i => ProtoUtil.basicDeploy(i))
     val deploysWithCost = deploys.map(d => ProcessedDeploy(deploy = Some(d)))
 
@@ -589,8 +649,12 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     val stake                 = 10L
     val equalBonds            = validators.map(_ -> stake).toMap
     val genesisWithEqualBonds = buildGenesis(Seq.empty, equalBonds, 0L)
-    val nodes                 = HashSetCasperTestNode.network(validatorKeys.take(3), genesisWithEqualBonds)
-    val deployDatas           = (0 to 7).map(i => ProtoUtil.basicDeployData(i))
+    val nodes = HashSetCasperTestNode.network(
+      validatorKeys.take(3),
+      genesisWithEqualBonds,
+      storageSize = 1024L * 1024L * 20L
+    )
+    val deployDatas = (0 to 7).map(i => ProtoUtil.basicDeployData(i))
 
     val Created(block1) = nodes(0).casperEff
       .deploy(deployDatas(0)) *> nodes(0).casperEff.createBlock

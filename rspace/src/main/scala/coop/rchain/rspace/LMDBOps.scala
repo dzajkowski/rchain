@@ -46,6 +46,7 @@ trait LMDBOps extends CloseOps {
       ret
     } catch {
       case ex: Throwable =>
+        ex.printStackTrace()
         try {
           txn.abort()
         } catch {
