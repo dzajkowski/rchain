@@ -8,7 +8,7 @@ import coop.rchain.rspace._
 import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.trace.{COMM, Consume, Produce}
-import coop.rchain.shared.SyncVarOps._
+import scala.Function.const
 import kamon._
 
 import scala.annotation.tailrec
@@ -63,7 +63,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
                          |at <channels: $channels>""".stripMargin.replace('\n', ' '))
 
           span.mark("before-event-log-lock-acquired")
-          eventLog.update(consumeRef +: _)
+          eventLog.getAndTransform(consumeRef :: _)
           span.mark("event-log-updated")
           /*
            * Here, we create a cache of the data at each channel as `channelToIndexedData`
@@ -110,7 +110,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
               consumeCommCounter.increment()
 
               span.mark("before-event-log-update")
-              eventLog.update(COMM(consumeRef, dataCandidates.map(_.datum.source)) +: _)
+              eventLog.getAndTransform(COMM(consumeRef, dataCandidates.map(_.datum.source)) :: _)
               span.mark("event-log-updated")
 
               dataCandidates
@@ -162,7 +162,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
           logger.debug(s"""|produce: searching for matching continuations
                          |at <groupedChannels: $groupedChannels>""".stripMargin.replace('\n', ' '))
           span.mark("before-event-log-lock-acquired")
-          eventLog.update(produceRef +: _)
+          eventLog.getAndTransform(produceRef :: _)
           span.mark("event-log-updated")
 
           /*
@@ -225,7 +225,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
                 ) =>
               produceCommCounter.increment()
 
-              eventLog.update(COMM(consumeRef, dataCandidates.map(_.datum.source)) +: _)
+              eventLog.getAndTransform(COMM(consumeRef, dataCandidates.map(_.datum.source)) :: _)
 
               if (!persistK) {
                 span.mark("acquire-write-lock")
@@ -278,8 +278,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
   override def createCheckpoint(): F[Checkpoint] =
     syncF.delay {
       val root   = store.createCheckpoint()
-      val events = eventLog.take()
-      eventLog.put(Seq.empty)
+      val events = eventLog.getAndTransform(const(Nil))
       Checkpoint(root, events)
     }
 }
