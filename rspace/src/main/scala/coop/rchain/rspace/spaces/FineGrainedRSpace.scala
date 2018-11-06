@@ -280,6 +280,8 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
     syncF.delay {
       val root   = store.createCheckpoint()
       val events = eventLog.take()
+      logger.debug("Collected {} events", events.size)
+      events.foreach(logger.debug("event {}", _))
       eventLog.put(Seq.empty)
       Checkpoint(root, events)
     }

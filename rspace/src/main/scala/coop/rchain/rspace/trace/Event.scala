@@ -74,7 +74,7 @@ object Produce extends StrictLogging {
     logger.debug("datum: {}", serializeA.encode(datum))
 
     val hashch = StableHashProvider.hash(Seq(channel))(serializeC.toCodec)
-    val hashd = StableHashProvider.hash(channel, datum, persist)
+    val hashd  = StableHashProvider.hash(channel, datum, persist)
 
     logger.debug("channel hash: {}", hashch)
     logger.debug("datum hash: {}", hashd)
@@ -119,8 +119,8 @@ object Consume extends StrictLogging {
     logger.debug("channels: {}", channels.map(serializeC.encode))
     logger.debug("patterns: {}", patterns.map(serializeP.encode))
     logger.debug("cont: {}", serializeK.encode(continuation))
-    val hashch = StableHashProvider.hash(channels)(serializeC.toCodec)
-    val hashpat   = StableHashProvider.hash(channels, patterns, continuation, persist)
+    val hashch  = StableHashProvider.hash(channels)(serializeC.toCodec)
+    val hashpat = StableHashProvider.hash(channels, patterns, continuation, persist)
 
     logger.debug("channel hash: {}", hashch)
     logger.debug("pattern hash: {}", hashpat)

@@ -23,7 +23,7 @@ import coop.rchain.crypto.codec.Base16
 import coop.rchain.crypto.hash.{Blake2b256, Keccak256}
 import coop.rchain.crypto.signatures.{Ed25519, Secp256k1}
 import coop.rchain.p2p.EffectsTestInstances.LogicalTime
-import coop.rchain.rholang.interpreter.{Runtime, accounting}
+import coop.rchain.rholang.interpreter.{accounting, Runtime}
 import coop.rchain.models.{Expr, Par}
 import coop.rchain.shared.PathOps.RichPath
 import monix.eval.Task
@@ -116,10 +116,16 @@ class HashSetCasperTest extends FlatSpec with Matchers with StrictLogging {
 
   it should "accept signed blocks" in {
     (0 until 1).foreach { i =>
-      logger.debug("--------------------------------Iteration {}--------------------------------", i)
+      logger.debug(
+        "--------------------------------Iteration {}--------------------------------",
+        i
+      )
       val node = HashSetCasperTestNode.standalone(genesis, validatorKeys.head)
       node.tearDown()
-      logger.debug("++++++++++++++++++++++++++++++++Iteration {}++++++++++++++++++++++++++++++++", i)
+      logger.debug(
+        "++++++++++++++++++++++++++++++++Iteration {}++++++++++++++++++++++++++++++++",
+        i
+      )
     }
   }
 
