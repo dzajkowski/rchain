@@ -9,7 +9,7 @@ import com.typesafe.scalalogging.Logger
 import coop.rchain.rspace.ISpace.IdISpace
 import coop.rchain.rspace.examples.StringExamples._
 import coop.rchain.rspace.examples.StringExamples.implicits._
-import coop.rchain.rspace.history.{Branch, ITrieStore, InMemoryTrieStore}
+import coop.rchain.rspace.history.{Branch, InMemoryTrieStore}
 import coop.rchain.rspace.internal.GNAT
 import coop.rchain.rspace.spaces._
 import coop.rchain.rspace.trace.{COMM, Consume, IOEvent, Produce}
@@ -18,6 +18,7 @@ import org.scalatest._
 import org.scalatest.concurrent.ScalaFutures
 
 import scala.Function.const
+import scala.collection.parallel.ParSeq
 import scala.collection.{immutable, mutable}
 import scala.concurrent.Future
 import scala.util.{Random, Right}
@@ -39,9 +40,13 @@ trait ReplayRSpaceTests
       persist: Boolean
   )(
       implicit matcher: Match[P, Nothing, A, R]
-  ): List[Option[(ContResult[C, P, K], Seq[Result[R]])]] =
-    (if (shuffle) Random.shuffle(range.toList) else range.toList).map { i: Int =>
-      space.consume(channelsCreator(i), patterns, continuationCreator(i), persist).right.get
+  ): ParSeq[Option[(ContResult[C, P, K], Seq[Result[R]])]] =
+    (if (shuffle) Random.shuffle(range.toList) else range.toList).par.map { i: Int =>
+      logger.debug("Started consume {}", i)
+      val res =
+        space.consume(channelsCreator(i), patterns, continuationCreator(i), persist).right.get
+      logger.debug("Finished consume {}", i)
+      res
     }
 
   def produceMany[C, P, A, R, K](
@@ -53,9 +58,12 @@ trait ReplayRSpaceTests
       persist: Boolean
   )(
       implicit matcher: Match[P, Nothing, A, R]
-  ): List[Option[(ContResult[C, P, K], immutable.Seq[Result[R]])]] =
-    (if (shuffle) Random.shuffle(range.toList) else range.toList).map { i: Int =>
-      space.produce(channelCreator(i), datumCreator(i), persist).right.get
+  ): ParSeq[Option[(ContResult[C, P, K], immutable.Seq[Result[R]])]] =
+    (if (shuffle) Random.shuffle(range.toList) else range.toList).par.map { i: Int =>
+      logger.debug("Started produce {}", i)
+      val res = space.produce(channelCreator(i), datumCreator(i), persist).right.get
+      logger.debug("Finished produce {}", i)
+      res
     }
 
   "reset to a checkpoint from a different branch" should "work" in withTestSpaces {
@@ -803,6 +811,50 @@ trait ReplayRSpaceTests
         replaySpace.produce(channel, data, false)
       )
     }
+
+  "replay" should "not allow for ambiguous executions" ignore withTestSpaces { (space, replaySpace) =>
+    val noMatch = Right(None)
+    val empty = space.createCheckpoint()
+    val channel1      = "ch1"
+    val channel2      = "ch2"
+    val key1          = List(channel1, channel2)
+    val patterns: List[Pattern]      = List(Wildcard, Wildcard)
+    val continuation1  = "continuation"
+    val continuation2  = "continuation"
+    val data1         = "datum1"
+    val data2         = "datum2"
+    val data3         = "datum3"
+
+    //some maliciously 'random' play order
+    space.produce(channel1, data3, false) shouldBe noMatch
+    space.produce(channel1, data3, false) shouldBe noMatch
+    space.produce(channel2, data1, false) shouldBe noMatch
+
+    space.consume(key1, patterns, continuation1, false).right.get should not be empty
+    //continuation1 produces data1 on ch2
+    space.produce(channel2, data1, false) shouldBe noMatch
+    space.consume(key1, patterns, continuation2, false).right.get should not be empty
+    //continuation2 produces data2 on ch2
+    space.produce(channel2, data2, false) shouldBe noMatch
+    val afterPlay = space.createCheckpoint()
+
+    //rig
+    replaySpace.rig(empty.root, afterPlay.log)
+
+    //some maliciously 'random' replay order
+    replaySpace.produce(channel1, data3, false) shouldBe noMatch
+    replaySpace.produce(channel1, data3, false) shouldBe noMatch
+    replaySpace.produce(channel2, data2, false) shouldBe noMatch
+    replaySpace.consume(key1, patterns, continuation2, false) shouldBe noMatch
+
+    replaySpace.consume(key1, patterns, continuation1, false).right.get should not be empty
+    //continuation1 produces data1 on ch2
+    replaySpace.produce(channel2, data1, false).right.get should not be empty //matches continuation2
+    //continuation2 produces data2 on ch2
+    replaySpace.produce(channel2, data2, false) shouldBe noMatch
+
+    replaySpace.replayData.isEmpty shouldBe true
+  }
 }
 
 trait ReplayRSpaceTestsBase[C, P, E, A, K] extends FlatSpec with Matchers with OptionValues {
@@ -955,7 +1007,7 @@ class LMDBReplayRSpaceTests
     extends LMDBReplayRSpaceTestsBase[String, Pattern, Nothing, String, String]
     with ReplayRSpaceTests {}
 
-class InMemoryRSpaceTests
+class InMemoryReplayRSpaceTests
     extends InMemoryReplayRSpaceTestsBase[String, Pattern, Nothing, String, String]
     with ReplayRSpaceTests {}
 
