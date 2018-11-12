@@ -8,12 +8,20 @@ import coop.rchain.rspace._
 import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.trace.{COMM, Consume, Produce}
+
 import scala.Function.const
 import kamon._
+import kamon.trace.Span
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Seq
 import scala.util.Random
+
+object FineGrainedRSpace {
+  val setup         = Kamon.buildSpan("setup")
+  val run           = Kamon.buildSpan("run")
+  var current: Span = _
+}
 
 class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
     store: IStore[C, P, A, K],
@@ -41,7 +49,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
       implicit m: Match[P, E, A, R]
   ): F[Either[E, Option[(ContResult[C, P, K], Seq[Result[R]])]]] =
     syncF.delay {
-      Kamon.withSpan(consumeSpan.start(), finishSpan = true) {
+      Kamon.withSpan(consumeSpan.asChildOf(FineGrainedRSpace.current).start(), finishSpan = true) {
         if (channels.isEmpty) {
           val msg = "channels can't be empty"
           logger.error(msg)
@@ -75,6 +83,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
            */
 
           span.mark("before-channel-to-indexed-data")
+          //TODO the shuffle can happen outside of the txn
           val channelToIndexedData = store.withTxn(store.createTxnRead()) { txn =>
             channels.map { c: C =>
               c -> Random.shuffle(store.getData(txn, Seq(c)).zipWithIndex)
@@ -108,9 +117,11 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
               Right(None)
             case Right(Some(dataCandidates)) =>
               consumeCommCounter.increment()
+              span.mark("before-comm-ref")
+              val commRef = COMM(consumeRef, dataCandidates.map(_.datum.source))
 
               span.mark("before-event-log-update")
-              eventLog.getAndTransform(COMM(consumeRef, dataCandidates.map(_.datum.source)) :: _)
+              eventLog.getAndTransform(commRef :: _)
               span.mark("event-log-updated")
 
               dataCandidates
@@ -147,7 +158,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
       implicit m: Match[P, E, A, R]
   ): F[Either[E, Option[(ContResult[C, P, K], Seq[Result[R]])]]] =
     syncF.delay {
-      Kamon.withSpan(produceSpan.start(), finishSpan = true) {
+      Kamon.withSpan(produceSpan.asChildOf(FineGrainedRSpace.current).start(), finishSpan = true) {
         val span = Kamon.currentSpan()
         span.mark("before-produce-ref-computed")
         val produceRef = Produce.create(channel, data, persist)
@@ -181,9 +192,13 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
               case channels :: remaining =>
                 span.mark("before-match-candidates")
                 val matchCandidates: Seq[(WaitingContinuation[P, K], Int)] =
-                  store.withTxn(store.createTxnRead()) { txn =>
-                    Random.shuffle(store.getWaitingContinuation(txn, channels).zipWithIndex)
-                  }
+                  Random.shuffle(
+                    store
+                      .withTxn(store.createTxnRead()) { txn =>
+                        store.getWaitingContinuation(txn, channels)
+                      }
+                      .zipWithIndex
+                  )
                 /*
                  * Here, we create a cache of the data at each channel as `channelToIndexedData`
                  * which is used for finding matches.  When a speculative match is found, we can
@@ -196,9 +211,13 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
                  */
                 span.mark("before-channel-to-indexed-data")
                 val channelToIndexedData: Map[C, Seq[(Datum[A], Int)]] = channels.map { (c: C) =>
-                  val as = store.withTxn(store.createTxnRead()) { txn =>
-                    Random.shuffle(store.getData(txn, Seq(c)).zipWithIndex)
-                  }
+                  val as = Random.shuffle(
+                    store
+                      .withTxn(store.createTxnRead()) { txn =>
+                        store.getData(txn, Seq(c))
+                      }
+                      .zipWithIndex
+                  )
                   c -> {
                     if (c == batChannel) (data, -1) +: as else as
                   }
@@ -225,7 +244,13 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
                 ) =>
               produceCommCounter.increment()
 
-              eventLog.getAndTransform(COMM(consumeRef, dataCandidates.map(_.datum.source)) :: _)
+              span.mark("before-comm-ref-produce-candidate")
+
+              val commRef = COMM(consumeRef, dataCandidates.map(_.datum.source))
+
+              span.mark("update-event-log-produce-candidate")
+
+              eventLog.getAndTransform(commRef :: _)
 
               if (!persistK) {
                 span.mark("acquire-write-lock")

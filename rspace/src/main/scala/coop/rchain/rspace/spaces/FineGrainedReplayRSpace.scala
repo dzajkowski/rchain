@@ -15,6 +15,7 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.Seq
 import kamon._
+import kamon.trace.Span
 
 class FineGrainedReplayRSpace[F[_], C, P, E, A, R, K](store: IStore[C, P, A, K], branch: Branch)(
     implicit

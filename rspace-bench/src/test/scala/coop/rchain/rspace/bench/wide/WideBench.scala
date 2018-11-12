@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit
 import coop.rchain.catscontrib.TaskContrib._
 import coop.rchain.crypto.hash.Blake2b512Random
 import coop.rchain.rholang.interpreter.Runtime
+import coop.rchain.rspace.spaces.FineGrainedRSpace
 import coop.rchain.shared.StoreType
 import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
@@ -32,12 +33,14 @@ class WideBench {
   @OutputTimeUnit(TimeUnit.MILLISECONDS)
   @Fork(value = 1)
   @Threads(1)
-  @Warmup(iterations = 2)
-  @Measurement(iterations = 5)
+  @Warmup(iterations = 0)
+  @Measurement(iterations = 1)
   def inmemWideReduceFine(bh: Blackhole, state: InMemBenchState): Unit = {
+    FineGrainedRSpace.current = FineGrainedRSpace.run.start()
     implicit val scheduler = state.scheduler
     val result             = state.runTask.unsafeRunSync
     bh.consume(processErrors(result))
+    FineGrainedRSpace.current.finish()
   }
 }
 
@@ -57,11 +60,13 @@ abstract class WideBenchState extends WideBenchBaseState {
 
   @Setup(value = Level.Iteration)
   override def doSetup(): Unit = {
+    FineGrainedRSpace.current = FineGrainedRSpace.setup.start()
     super.doSetup()
     //make sure we always start from clean rspace
     runtime.replaySpace.clear()
     runtime.space.clear()
     processErrors(Await.result(createTest(setupTerm, runtime.reducer).runAsync, Duration.Inf))
     runTask = createTest(term, runtime.reducer)
+    FineGrainedRSpace.current.finish()
   }
 }

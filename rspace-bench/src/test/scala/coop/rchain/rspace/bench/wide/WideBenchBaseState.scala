@@ -6,12 +6,15 @@ import java.io.{FileNotFoundException, InputStreamReader}
 import java.nio.file.{Files, Path}
 import java.util.concurrent.TimeUnit
 
+import com.typesafe.config.ConfigValueFactory
 import coop.rchain.catscontrib.TaskContrib._
 import coop.rchain.crypto.hash.Blake2b512Random
 import coop.rchain.models.Par
 import coop.rchain.rholang.interpreter.accounting.Cost
 import coop.rchain.rholang.interpreter.{Interpreter, Runtime}
 import coop.rchain.shared.StoreType
+import kamon.Kamon
+import kamon.zipkin.ZipkinReporter
 import monix.eval.Task
 import monix.execution.Scheduler
 import org.openjdk.jmh.annotations._
@@ -38,7 +41,14 @@ abstract class WideBenchBaseState {
 
   def createRuntime(): Runtime = Runtime.create(dbDir, mapSize)
 
-  @Setup(value = Level.Iteration)
+  Kamon.addReporter(new ZipkinReporter)
+  Kamon.reconfigure(
+    Kamon
+      .config()
+      .withValue("kamon.zipkin.host", ConfigValueFactory.fromAnyRef("10.13.38.249"))
+      .withValue("kamon.trace.sampler", ConfigValueFactory.fromAnyRef("always"))
+  )
+
   def doSetup(): Unit = {
     deleteOldStorage(dbDir)
     setupTerm =
