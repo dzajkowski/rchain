@@ -115,6 +115,7 @@ abstract class RSpaceOps[F[_], C, P, E, A, R, K](val store: IStore[C, P, A, K], 
           store.trieStore.validateAndPutRoot(trieTxn, store.trieBranch, root)
           val leaves = store.trieStore.getLeaves(trieTxn, root)
           eventLog.getAndTransform(const(Nil))
+//          eventLog.update(const(Nil))
           store.getAndClearTrieUpdates()
           store.clear(txn)
           restoreInstalls(txn)

@@ -8,6 +8,7 @@ import coop.rchain.rspace._
 import coop.rchain.rspace.history.Branch
 import coop.rchain.rspace.internal._
 import coop.rchain.rspace.trace.{COMM, Consume, Produce}
+import coop.rchain.shared.SyncVarOps._
 
 import scala.Function.const
 import kamon._
@@ -72,6 +73,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
 
           span.mark("before-event-log-lock-acquired")
           eventLog.getAndTransform(consumeRef :: _)
+//          eventLog.update(consumeRef :: _)
           span.mark("event-log-updated")
           /*
            * Here, we create a cache of the data at each channel as `channelToIndexedData`
@@ -122,6 +124,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
 
               span.mark("before-event-log-update")
               eventLog.getAndTransform(commRef :: _)
+//              eventLog.update(commRef :: _)
               span.mark("event-log-updated")
 
               dataCandidates
@@ -174,6 +177,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
                          |at <groupedChannels: $groupedChannels>""".stripMargin.replace('\n', ' '))
           span.mark("before-event-log-lock-acquired")
           eventLog.getAndTransform(produceRef :: _)
+//          eventLog.update(produceRef :: _)
           span.mark("event-log-updated")
 
           /*
@@ -251,6 +255,7 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
               span.mark("update-event-log-produce-candidate")
 
               eventLog.getAndTransform(commRef :: _)
+//              eventLog.update(commRef :: _)
 
               if (!persistK) {
                 span.mark("acquire-write-lock")
@@ -304,6 +309,8 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
     syncF.delay {
       val root   = store.createCheckpoint()
       val events = eventLog.getAndTransform(const(Nil))
+//      val events = eventLog.get
+//      eventLog.update(const(Nil))
       Checkpoint(root, events)
     }
 }
