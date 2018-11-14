@@ -25,10 +25,11 @@ import monix.execution.Scheduler
 import scala.collection.mutable
 
 object A {
-  def a() = {
+  def a(): Boolean = {
     implicit val s = Scheduler.fixedPool("three-threads", 3)
     implicit val sync = coop.rchain.catscontrib.effect.implicits.syncId
     implicit val cap = coop.rchain.catscontrib.idCapture
+    val size = 4
 
     val (otherSk, otherPk)          = Ed25519.newKeyPair
     val (validatorKeys, validators) = (1 to 4).map(_ => Ed25519.newKeyPair).unzip
@@ -45,7 +46,8 @@ object A {
 
     val storageSize: Long = 1024L * 1024 * 10
     implicit val timeEff = new LogicalTime[Id]
-    val n     = validatorKeys.take(1).length
+    val n     = validatorKeys.take(size).length
+
     val names = (1 to n).map(i => s"node-$i")
     val peers = names.map(peerNode(_, 40400))
     val msgQueues = peers
@@ -54,7 +56,7 @@ object A {
       .mapValues(Ref.unsafe[Id, mutable.Queue[Protocol]])
     val logicalTime: LogicalTime[Id] = new LogicalTime[Id]
 
-    val sks = validatorKeys.take(1)
+    val sks = validatorKeys.take(size)
 
     val nodes =
       names
@@ -94,11 +96,11 @@ object A {
     } yield res
 
     println(r)
-    r.head
+    r.foldLeft(true){ case (a, b) => b.isRight && a}
   }
 
   def main(args: Array[String]): Unit = {
-    while (a().isRight) {
+    while (a()) {
       print(".")
     }
   }
