@@ -26,27 +26,27 @@ import scala.collection.mutable
 
 object A {
   def a(): Boolean = {
-    implicit val s = Scheduler.fixedPool("three-threads", 3)
+    implicit val s    = Scheduler.fixedPool("three-threads", 3)
     implicit val sync = coop.rchain.catscontrib.effect.implicits.syncId
-    implicit val cap = coop.rchain.catscontrib.idCapture
-    val size = 4
+    implicit val cap  = coop.rchain.catscontrib.idCapture
+    val size          = 5
 
     val (otherSk, otherPk)          = Ed25519.newKeyPair
     val (validatorKeys, validators) = (1 to 4).map(_ => Ed25519.newKeyPair).unzip
     val (ethPivKeys, ethPubKeys)    = (1 to 4).map(_ => Secp256k1.newKeyPair).unzip
     val ethAddresses =
-    ethPubKeys.map(pk => "0x" + Base16.encode(Keccak256.hash(pk.bytes.drop(1)).takeRight(20)))
+      ethPubKeys.map(pk => "0x" + Base16.encode(Keccak256.hash(pk.bytes.drop(1)).takeRight(20)))
     val wallets     = ethAddresses.map(addr => PreWallet(addr, BigInt(10001)))
     val bonds       = createBonds(validators)
     val minimumBond = 100L
     val genesis =
-    buildGenesis(wallets, bonds, minimumBond, Long.MaxValue, Faucet.basicWalletFaucet, 0L)
+      buildGenesis(wallets, bonds, minimumBond, Long.MaxValue, Faucet.basicWalletFaucet, 0L)
 
     val errorHandler = ApplicativeError_.applicativeError[Id, CommError](appErrId)
 
     val storageSize: Long = 1024L * 1024 * 10
-    implicit val timeEff = new LogicalTime[Id]
-    val n     = validatorKeys.take(size).length
+    implicit val timeEff  = new LogicalTime[Id]
+    val n                 = validatorKeys.take(size).length
 
     val names = (1 to n).map(i => s"node-$i")
     val peers = names.map(peerNode(_, 40400))
@@ -78,31 +78,20 @@ object A {
         }
         .toVector
 
-    import Connections._
-    //make sure all nodes know about each other
-    val pairs = for {
-      n <- nodes
-      m <- nodes
-      if n.local != m.local
-    } yield (n, m)
-
-    println(pairs)
-
     val r = for {
       res <- nodes.traverse { a =>
-        println("will init" + a)
-        a.initialize()
-      }
+              println("will init" + a)
+              a.initialize()
+            }
     } yield res
 
     println(r)
-    r.foldLeft(true){ case (a, b) => b.isRight && a}
+    r.foldLeft(true) { case (a, b) => b.isRight && a }
   }
 
-  def main(args: Array[String]): Unit = {
+  def main(args: Array[String]): Unit =
     while (a()) {
       print(".")
     }
-  }
 
 }

@@ -72,6 +72,7 @@ object InterpreterUtil {
           case Left((Some(deploy), status)) =>
             status match {
               case InternalErrors(exs) =>
+                exs.foreach(_.printStackTrace())
                 Left(
                   BlockException(
                     new Exception(s"Internal errors encountered while processing ${PrettyPrinter
