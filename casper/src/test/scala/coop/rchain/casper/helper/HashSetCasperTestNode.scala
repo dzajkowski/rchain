@@ -19,6 +19,7 @@ import coop.rchain.casper.util.comm.CasperPacketHandler.{
   CasperPacketHandlerInternal
 }
 import coop.rchain.casper.util.comm.TransportLayerTestImpl
+import coop.rchain.casper.util.rholang.RuntimeManager.StateHash
 import coop.rchain.casper.util.rholang.{InterpreterUtil, RuntimeManager}
 import coop.rchain.catscontrib._
 import coop.rchain.catscontrib.TaskContrib._
@@ -105,7 +106,7 @@ class HashSetCasperTestNode[F[_]](
     casperPacketHandler.handle
   )
 
-  def initialize(): F[Unit] =
+  def initialize(): F[Either[BlockException, Option[StateHash]]] =
     // pre-population removed from internals of Casper
     blockStore.put(genesis.blockHash, genesis) *>
       InterpreterUtil
@@ -114,7 +115,6 @@ class HashSetCasperTestNode[F[_]](
           dag,
           runtimeManager
         )
-        .void
 
   def receive(): F[Unit] = tle.receive(p => handle[F](p, defaultTimeout), kp(().pure[F]))
 
@@ -223,8 +223,14 @@ object HashSetCasperTestNode {
       if n.local != m.local
     } yield (n, m)
 
+    println(pairs)
+
     for {
-      _ <- nodes.traverse(_.initialize).void
+      res <- nodes.traverse { a =>
+              println("will init" + a)
+              a.initialize()
+            }
+      _ = println(res)
       _ <- pairs.foldLeft(().pure[F]) {
             case (f, (n, m)) =>
               f.flatMap(

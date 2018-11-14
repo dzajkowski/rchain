@@ -274,7 +274,7 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     }
   }
 
-  it should "propose blocks it adds to peers" in {
+  it should "111111 propose blocks it adds to peers" in {
     val nodes      = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
     val deployData = ProtoUtil.basicDeployData[Id](0)
 
@@ -296,7 +296,7 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     }
   }
 
-  it should "add a valid block from peer" in {
+  it should "111111 add a valid block from peer" in {
     val nodes      = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
     val deployData = ProtoUtil.basicDeployData[Id](1)
 
@@ -317,7 +317,7 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     }
   }
 
-  it should "handle multi-parent blocks correctly" in {
+  it should "111111 handle multi-parent blocks correctly" in {
     val nodes = HashSetCasperTestNode.network(validatorKeys.take(2), genesis)
     val deploys = Vector(
       ProtoUtil.basicDeployData[Id](0),
@@ -359,7 +359,7 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     nodes.foreach(_.tearDown())
   }
 
-  it should "allow bonding and distribute the joining fee" in {
+  def myTest = {
     val nodes =
       HashSetCasperTestNode.network(
         validatorKeys :+ otherSk,
@@ -393,7 +393,17 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     val Created(block1) = nodes(0).casperEff.deploy(walletUnlockDeploy) *> nodes(0).casperEff
       .deploy(bondingForwarderDeploy) *> nodes(0).casperEff.createBlock
     val block1Status = nodes(0).casperEff.addBlock(block1)
-    nodes.foreach(_.receive) //send to all peers
+    nodes.zipWithIndex.foreach {
+      case (x, i) =>
+        try {
+          x.receive()
+        } catch {
+          case e =>
+            println("qq wait what?" + i)
+            e.printStackTrace()
+            throw e
+        }
+    } //send to all peers
 
     val Created(block2) = nodes(1).casperEff
       .deploy(bondingTransferDeploy) *> nodes(1).casperEff.createBlock
@@ -425,26 +435,26 @@ class HashSetCasperTest extends FlatSpec with Matchers {
 
     val rankedValidatorQuery = ProtoUtil.sourceDeploy(
       """new rl(`rho:registry:lookup`), SystemInstancesCh, posCh in {
-      |  rl!(`rho:id:wdwc36f4ixa6xacck3ddepmgueum7zueuczgthcqp6771kdu8jogm8`, *SystemInstancesCh) |
-      |  for(@(_, SystemInstancesRegistry) <- SystemInstancesCh) {
-      |    @SystemInstancesRegistry!("lookup", "pos", *posCh) |
-      |    for(pos <- posCh){
-      |      new bondsCh, getRanking in {
-      |        contract getRanking(@bonds, @acc, return) = {
-      |          match bonds {
-      |            {key:(stake, _, _, index) ...rest} => {
-      |              getRanking!(rest, acc ++ [(key, stake, index)], *return)
-      |            }
-      |            _ => { return!(acc) }
-      |          }
-      |        } |
-      |        pos!("getBonds", *bondsCh) | for(@bonds <- bondsCh) {
-      |          getRanking!(bonds, [], "__SCALA__")
-      |        }
-      |      }
-      |    }
-      |  }
-      |}""".stripMargin,
+        |  rl!(`rho:id:wdwc36f4ixa6xacck3ddepmgueum7zueuczgthcqp6771kdu8jogm8`, *SystemInstancesCh) |
+        |  for(@(_, SystemInstancesRegistry) <- SystemInstancesCh) {
+        |    @SystemInstancesRegistry!("lookup", "pos", *posCh) |
+        |    for(pos <- posCh){
+        |      new bondsCh, getRanking in {
+        |        contract getRanking(@bonds, @acc, return) = {
+        |          match bonds {
+        |            {key:(stake, _, _, index) ...rest} => {
+        |              getRanking!(rest, acc ++ [(key, stake, index)], *return)
+        |            }
+        |            _ => { return!(acc) }
+        |          }
+        |        } |
+        |        pos!("getBonds", *bondsCh) | for(@bonds <- bondsCh) {
+        |          getRanking!(bonds, [], "__SCALA__")
+        |        }
+        |      }
+        |    }
+        |  }
+        |}""".stripMargin,
       0L,
       accounting.MAX_VALUE
     )
@@ -485,6 +495,102 @@ class HashSetCasperTest extends FlatSpec with Matchers {
     newBonds.toSet shouldBe correctBonds
 
     nodes.foreach(_.tearDown())
+  }
+
+  it should "1111112a allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112b allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112c allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112d allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112e allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112f allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112g allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112h allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112a1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112b1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112c1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112d1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112e1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112f1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112g1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112h1 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112a2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112b2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112c2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112d2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112e2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112f2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112g2 allow bonding and distribute the joining fee" in {
+    myTest
+  }
+
+  it should "1111112h2 allow bonding and distribute the joining fee" in {
+    myTest
   }
 
   it should "have a working faucet (in testnet)" in {

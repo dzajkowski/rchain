@@ -49,18 +49,6 @@ class RuntimeManager private (val emptyStateHash: ByteString, runtimeContainer: 
     result.flatMap(_.a.pars)
   }
 
-  def replayComputeState(
-      hash: StateHash,
-      terms: Seq[InternalProcessedDeploy],
-      time: Option[Long] = None
-  ): Task[Either[(Option[Deploy], Failed), StateHash]] =
-    for {
-      runtime <- Task.delay(runtimeContainer.take())
-      _       <- setTimestamp(time, runtime)
-      result  <- replayEval(terms, runtime, hash)
-      _       <- Task.delay(runtimeContainer.put(runtime))
-    } yield result
-
   def computeState(
       hash: StateHash,
       terms: Seq[Deploy],
@@ -214,6 +202,20 @@ class RuntimeManager private (val emptyStateHash: ByteString, runtimeContainer: 
 
     doEval(terms, Blake2b256Hash.fromByteArray(initHash.toByteArray), Vector.empty)
   }
+
+  def replayComputeState(
+      hash: StateHash,
+      terms: Seq[InternalProcessedDeploy],
+      time: Option[Long] = None
+  ): Task[Either[(Option[Deploy], Failed), StateHash]] =
+    for {
+      runtime <- Task.delay(runtimeContainer.take())
+      _       <- setTimestamp(time, runtime)
+      _       <- Task.delay(println("1"))
+      result  <- replayEval(terms, runtime, hash)
+      _       <- Task.delay(println("2"))
+      _       <- Task.delay(runtimeContainer.put(runtime))
+    } yield result
 
   private def replayEval(
       terms: Seq[InternalProcessedDeploy],

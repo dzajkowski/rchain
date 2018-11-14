@@ -55,6 +55,7 @@ trait IReplaySpace[F[_], C, P, E, A, R, K] extends ISpace[F, C, P, E, A, R, K] {
       }
       .flatMap { _ =>
         // reset to the starting checkpoint
+        println("wait what? " + startRoot)
         reset(startRoot)
       }
 }
