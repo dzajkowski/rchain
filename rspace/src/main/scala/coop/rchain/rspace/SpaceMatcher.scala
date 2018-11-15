@@ -33,7 +33,10 @@ private[rspace] trait SpaceMatcher[F[_], C, P, E, A, R, K] extends ISpace[F, C, 
 
   val branch: Branch
 
-  protected[this] val eventLog: AtomicAny[List[Event]] = AtomicAny[List[Event]](Nil)
+//  protected[this] val eventLog: AtomicAny[List[Event]] = AtomicAny[List[Event]](Nil)
+
+  protected[this] val eventLog: scala.collection.mutable.ListBuffer[Event] =
+    scala.collection.mutable.ListBuffer.empty
 
 //  protected[this] val eventLog: SyncVar[List[Event]] = SyncVarOps.create(Nil)
 

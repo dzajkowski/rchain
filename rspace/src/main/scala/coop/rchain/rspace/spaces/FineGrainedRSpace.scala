@@ -72,7 +72,8 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
                          |at <channels: $channels>""".stripMargin.replace('\n', ' '))
 
           span.mark("before-event-log-lock-acquired")
-          eventLog.getAndTransform(consumeRef :: _)
+          eventLog :+ consumeRef
+//          eventLog.getAndTransform(consumeRef :: _)
 //          eventLog.update(consumeRef :: _)
           span.mark("event-log-updated")
           /*
@@ -123,7 +124,8 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
               val commRef = COMM(consumeRef, dataCandidates.map(_.datum.source))
 
               span.mark("before-event-log-update")
-              eventLog.getAndTransform(commRef :: _)
+              eventLog :+ commRef
+//              eventLog.getAndTransform(commRef :: _)
 //              eventLog.update(commRef :: _)
               span.mark("event-log-updated")
 
@@ -176,7 +178,8 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
           logger.debug(s"""|produce: searching for matching continuations
                          |at <groupedChannels: $groupedChannels>""".stripMargin.replace('\n', ' '))
           span.mark("before-event-log-lock-acquired")
-          eventLog.getAndTransform(produceRef :: _)
+          eventLog :+ produceRef
+//          eventLog.getAndTransform(produceRef :: _)
 //          eventLog.update(produceRef :: _)
           span.mark("event-log-updated")
 
@@ -254,7 +257,8 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
 
               span.mark("update-event-log-produce-candidate")
 
-              eventLog.getAndTransform(commRef :: _)
+              eventLog :+ commRef
+//              eventLog.getAndTransform(commRef :: _)
 //              eventLog.update(commRef :: _)
 
               if (!persistK) {
@@ -308,7 +312,9 @@ class FineGrainedRSpace[F[_], C, P, E, A, R, K] private[rspace] (
   override def createCheckpoint(): F[Checkpoint] =
     syncF.delay {
       val root   = store.createCheckpoint()
-      val events = eventLog.getAndTransform(const(Nil))
+      val events = eventLog.toList
+      eventLog.clear()
+//      val events = eventLog.getAndTransform(const(Nil))
 //      val events = eventLog.get
 //      eventLog.update(const(Nil))
       Checkpoint(root, events)

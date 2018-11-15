@@ -148,7 +148,8 @@ abstract class FineGrainedRSpaceOps[F[_], C, P, E, A, R, K](
         store.withTrieTxn(txn) { trieTxn =>
           store.trieStore.validateAndPutRoot(trieTxn, store.trieBranch, root)
           val leaves = store.trieStore.getLeaves(trieTxn, root)
-          eventLog.getAndTransform(const(Nil))
+          eventLog.clear()
+//          eventLog.getAndTransform(const(Nil))
 //          eventLog.update(const(Nil))
           store.getAndClearTrieUpdates()
           store.clear(txn)
