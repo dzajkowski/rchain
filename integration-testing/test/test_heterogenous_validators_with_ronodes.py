@@ -85,11 +85,11 @@ def started_joining_validator(system, bootstrap_node):
 
 
 @contextlib.contextmanager
-def started_unbonded_validator(system, bootstrap_node):
+def started_unbonded_validator(system, bootstrap_node, name='unbonded_validator'):
     unbonded_validator = create_peer(
         docker_client=system.docker,
         network=bootstrap_node.network,
-        name='unbonded_validator',
+        name=name,
         bonds_file=system.validators_data.bonds_file,
         rnode_timeout=system.config.rnode_timeout,
         bootstrap=bootstrap_node,
@@ -113,7 +113,7 @@ def test_heterogenous_validators_with_ronodes(custom_system):
             for _ in range(BONDED_VALIDATOR_BLOCKS):
                 bonded_validator.propose()
 
-            with started_unbonded_validator(custom_system, bootstrap_node) as ronode:
+            with started_unbonded_validator(custom_system, bootstrap_node, 'ronode') as ronode:
                 bonded_validator.deploy(contract_path)
                 for _ in range(BONDED_VALIDATOR_BLOCKS):
                     bonded_validator.propose()
