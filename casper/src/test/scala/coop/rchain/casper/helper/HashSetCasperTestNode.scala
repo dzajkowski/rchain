@@ -4,8 +4,8 @@ import java.nio.file.Files
 
 import cats.{Applicative, ApplicativeError, Id, Monad, Traverse}
 import cats.data.EitherT
-import cats.effect.concurrent.Ref
-import cats.effect.Sync
+import cats.effect.concurrent.{Ref, Semaphore}
+import cats.effect.{Concurrent, Sync}
 import cats.implicits._
 import coop.rchain.catscontrib.ski._
 import coop.rchain.blockstorage.{BlockMetadata, LMDBBlockStore}
@@ -53,6 +53,7 @@ class HashSetCasperTestNode[F[_]](
     logicalTime: LogicalTime[F],
     implicit val errorHandlerEff: ErrorHandler[F],
     storageSize: Long,
+    s: Semaphore[F],
     shardId: String = "rchain"
 )(implicit scheduler: Scheduler, syncF: Sync[F], captureF: Capture[F]) {
 
@@ -93,7 +94,8 @@ class HashSetCasperTestNode[F[_]](
     genesis,
     dag,
     postGenesisStateHash,
-    shardId
+    shardId,
+    s
   )
 
   implicit val multiparentCasperRef = MultiParentCasperRef.unsafe[F](Some(casperEff))
@@ -140,7 +142,8 @@ object HashSetCasperTestNode {
       implicit scheduler: Scheduler,
       errorHandler: ErrorHandler[F],
       syncF: Sync[F],
-      captureF: Capture[F]
+      captureF: Capture[F],
+      concurrentF: Concurrent[F]
   ): F[HashSetCasperTestNode[F]] = {
     val name     = "standalone"
     val identity = peerNode(name, 40400)
@@ -148,17 +151,21 @@ object HashSetCasperTestNode {
       new TransportLayerTestImpl[F](identity, Map.empty[PeerNode, Ref[F, mutable.Queue[Protocol]]])
     val logicalTime: LogicalTime[F] = new LogicalTime[F]
 
-    val result = new HashSetCasperTestNode[F](
-      name,
-      identity,
-      tle,
-      genesis,
-      sk,
-      logicalTime,
-      errorHandler,
-      storageSize
-    )
-    result.initialize.map(_ => result)
+    for {
+      s <- Semaphore[F](1)
+      result = new HashSetCasperTestNode[F](
+        name,
+        identity,
+        tle,
+        genesis,
+        sk,
+        logicalTime,
+        errorHandler,
+        storageSize,
+        s
+      )
+      _ <- result.initialize
+    } yield result
   }
   def standalone(genesis: BlockMessage, sk: Array[Byte], storageSize: Long = 1024L * 1024 * 10)(
       implicit scheduler: Scheduler
@@ -173,7 +180,8 @@ object HashSetCasperTestNode {
       scheduler,
       ApplicativeError_[Effect, CommError],
       syncEffectInstance,
-      Capture[Effect]
+      Capture[Effect],
+      Concurrent[Effect]
     ).value.unsafeRunSync.right.get
 
   def networkF[F[_]](
@@ -184,7 +192,8 @@ object HashSetCasperTestNode {
       implicit scheduler: Scheduler,
       errorHandler: ErrorHandler[F],
       syncF: Sync[F],
-      captureF: Capture[F]
+      captureF: Capture[F],
+      concurrentF: Concurrent[F]
   ): F[IndexedSeq[HashSetCasperTestNode[F]]] = {
     val n     = sks.length
     val names = (1 to n).map(i => s"node-$i")
@@ -195,36 +204,45 @@ object HashSetCasperTestNode {
       .mapValues(Ref.unsafe[F, mutable.Queue[Protocol]])
     val logicalTime: LogicalTime[F] = new LogicalTime[F]
 
-    val nodes =
+    val nodesF: F[Vector[HashSetCasperTestNode[F]]] =
       names
         .zip(peers)
         .zip(sks)
         .map {
           case ((n, p), sk) =>
             val tle = new TransportLayerTestImpl[F](p, msgQueues)
-            new HashSetCasperTestNode[F](
-              n,
-              p,
-              tle,
-              genesis,
-              sk,
-              logicalTime,
-              errorHandler,
-              storageSize
-            )
+            Semaphore[F](1).flatMap(semaphore => {
+              val h = new HashSetCasperTestNode[F](
+                n,
+                p,
+                tle,
+                genesis,
+                sk,
+                logicalTime,
+                errorHandler,
+                storageSize,
+                semaphore
+              )
+              h.initialize().map(_ => h)
+            })
         }
         .toVector
+        .sequence
 
     import Connections._
     //make sure all nodes know about each other
-    val pairs = for {
-      n <- nodes
-      m <- nodes
-      if n.local != m.local
-    } yield (n, m)
+    val pairsF: F[Vector[(HashSetCasperTestNode[F], HashSetCasperTestNode[F])]] = nodesF.map(
+      nodes =>
+        for {
+          n <- nodes
+          m <- nodes
+          if n.local != m.local
+        } yield (n, m)
+    )
 
     for {
-      _ <- nodes.traverse(_.initialize).void
+      nodes <- nodesF
+      pairs <- pairsF
       _ <- pairs.foldLeft(().pure[F]) {
             case (f, (n, m)) =>
               f.flatMap(
@@ -251,7 +269,8 @@ object HashSetCasperTestNode {
       scheduler,
       ApplicativeError_[Effect, CommError],
       syncEffectInstance,
-      Capture[Effect]
+      Capture[Effect],
+      Concurrent[Effect]
     )
 
   val appErrId = new ApplicativeError[Id, CommError] {

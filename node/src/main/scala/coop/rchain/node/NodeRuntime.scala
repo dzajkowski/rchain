@@ -348,6 +348,7 @@ class NodeRuntime private[node] (
                               oracle,
                               Capture[Effect],
                               Sync[Effect],
+                              Concurrent[Effect],
                               Time.eitherTTime(Monad[Task], time),
                               Log.eitherTLog(Monad[Task], log),
                               multiParentCasperRef,
