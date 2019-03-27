@@ -2,7 +2,7 @@ package coop.rchain.rspace.nrspace
 import java.nio.ByteBuffer
 import java.nio.file.Path
 
-import cats.Applicative
+import cats.{Applicative, ApplicativeError}
 import cats.implicits._
 import coop.rchain.rspace._
 import coop.rchain.rspace.history.{Leaf, Trie}
@@ -13,6 +13,7 @@ import org.lmdbjava.DbiFlags.MDB_CREATE
 import org.lmdbjava.{Dbi, Env, EnvFlags}
 import scodec.Codec
 
+import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.Seq
 
 class NRSpace[F[_]: Applicative, C, P, A, R, K] private[rspace] (
@@ -36,16 +37,15 @@ class NRSpace[F[_]: Applicative, C, P, A, R, K] private[rspace] (
     Checkpoint(nr, log).pure[F]
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   def reset(root: Blake2b256Hash): F[Unit] = {
-    val ht = trieStore.getTrie(root)
-    currentHotStore = HotStore.of[C, P, A, K](ht)
+    trieStore.getTrie(root) match {
+      case None     => throw new RuntimeException(s"no history trie at root $root")
+      case Some(ht) => currentHotStore = HotStore.of[C, P, A, K](ht)
+    }
+
     ().pure[F]
   }
-}
-
-final case class HistoryTrie[K, V](root: Blake2b256Hash) {
-  def insert(k: K, hash: Blake2b256Hash): HistoryTrie[K, V] = ???
-  def delete(k: K): HistoryTrie[K, V]                       = ???
 }
 
 final case class HotStore[C, P, A, K](trie: HistoryTrie[K, GNAT[C, P, A, K]]) {
@@ -88,7 +88,9 @@ final case class TrieUpdate[C, P, A, K](
 class TrieStore[C, P, A, K] {
   type Data = GNAT[C, P, A, K]
 
-  def getTrie(root: Blake2b256Hash): HistoryTrie[K, Data] = ???
+  private val tries: TrieMap[Blake2b256Hash, HistoryTrie[K, Data]] = TrieMap.empty
+
+  def getTrie(root: Blake2b256Hash): Option[HistoryTrie[K, Data]] = tries.get(root)
 
   def process(
       trie: HistoryTrie[K, Data],
@@ -97,19 +99,17 @@ class TrieStore[C, P, A, K] {
       implicit codecK: Codec[K],
       codecV: Codec[Data]
   ): (Blake2b256Hash, List[(Blake2b256Hash, Trie[K, Data])]) = {
-    val r: List[(Blake2b256Hash, Trie[K, Data])] = List.empty
-    val (nht, l) = updates.foldRight((trie, r)) {
-      case (update, (t, acc)) =>
-        update match {
-          case TrieUpdate(_, Delete, channelsHash, _) =>
-            (t.delete(channelsHash), acc)
-          case TrieUpdate(_, Insert, channelsHash, gnat) =>
-            val leaf: Leaf[K, Data] = Leaf(channelsHash, gnat)
-            val hash                = Trie.hash(leaf)
-            (t.insert(channelsHash, hash), acc :+ (hash, leaf))
-        }
+    val data = updates.map {
+      case TrieUpdate(_, Delete, channelsHash, _) =>
+        (DelAction(channelsHash), None)
+      case TrieUpdate(_, Insert, channelsHash, gnat) =>
+        val leaf: Leaf[K, Data] = Leaf(channelsHash, gnat)
+        val hash                = Trie.hash(leaf)
+        (InsAction(channelsHash, hash), Some((hash, leaf)))
     }
-    (nht.root, l)
+    val (actions, d) = data.unzip
+    val nht          = trie.process(actions)
+    (nht.root, d.flatten)
   }
 }
 
