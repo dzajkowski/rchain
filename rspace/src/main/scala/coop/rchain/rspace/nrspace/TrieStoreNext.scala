@@ -35,42 +35,23 @@ trait PBS {
   def get(h: Blake2b256Hash): Option[PointerBlock]
 }
 
-case class HTX[K](ha: HT, pbs: PBS, root: Blake2b256Hash)(implicit codecK: Codec[K], ordering: Ordering[List[Byte]]) {
-  def a() = ???
-
-  def process(actions: List[Action[K]]): Blake2b256Hash = {
-    val values = actions.map(a => (codecK.encode(a.key).get.bytes.toSeq.toList, a)).sortBy(_._1)
-    val (path, action) = values.head
-    val r = traverseTrie(path)
-    a(r)
-  }
-
-  def isPrefix(affix: ByteVector, cp: List[Byte]): Boolean = {
-    cp.startsWith(affix.toSeq)
-  }
-
-  type TriePath = Vector[Trie]
-
-  private def traverseTrie(path: List[Byte]): (Trie, TriePath) = {
-    // list might be bad here...
-    @tailrec
-    def traverse(t: Trie, cp: List[Byte], path: TriePath): (Trie, TriePath) = {
-      (t, cp) match {
-        case (EmptyTrie, _) => (EmptyTrie, path)
-        case (l:Leaf, Nil) => (t, path :+ l)
-        case (s@Skip(affix, p), _) if isPrefix(affix, cp) => traverse(ha.get(p), cp.drop(affix.size.toInt), path :+ s)
-        case (pn@Node(ptr), h :: tail) =>
-          pbs.get(ptr) match {
-            case Some(pb) => traverse(pb(h), tail, path :+ pn)
-            case None => throw new RuntimeException("malformed trie")
-          }
-        case _ => throw new RuntimeException("malformed trie")
-      }
-    }
-    traverse(ha.get(root), path, Vector.empty[Trie])
-  }
-
-}
+//case class HTX[K](ha: HT, pbs: PBS, root: Blake2b256Hash)(
+//    implicit codecK: Codec[K],
+//    ordering: Ordering[List[Byte]]
+//) {
+//  def a() = ???
+//
+//  def process(actions: List[Action[K]]): Blake2b256Hash =
+//    ???
+//
+//  def isPrefix(affix: ByteVector, cp: List[Byte]): Boolean =
+//    cp.startsWith(affix.toSeq)
+//
+//  type TriePath = Vector[Trie]
+//
+//  private def traverseTrie(path: List[Byte]): (Trie, TriePath) = ???
+//
+//}
 
 //case class HistoryTrieX[K](root: Blake2b256Hash, fetchedPaths: TrieMap[K, TriePath] = TrieMap.empty, trieStore: HTS, pointerBlockStore: HPB)(implicit val codecK: Codec[K]) {
 //
@@ -116,7 +97,7 @@ object TrieStoreNext {
     def put(hash: Blake2b256Hash, value: Trie): Unit
   }
 
-  case class HTSI() extends HTS {
+  final case class HTSI() extends HTS {
     override def get(hash: LeafPointer): Trie              = ???
     override def put(hash: LeafPointer, value: Trie): Unit = ???
   }
@@ -126,7 +107,7 @@ object TrieStoreNext {
     def put(hash: Blake2b256Hash, value: PointerBlock): Unit
   }
 
-  case class HPBI() extends HPB {
+  final case class HPBI() extends HPB {
     override def get(hash: LeafPointer): Option[PointerBlock]      = ???
     override def put(hash: LeafPointer, value: PointerBlock): Unit = ???
   }

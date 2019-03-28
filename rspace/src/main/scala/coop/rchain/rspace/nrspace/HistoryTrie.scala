@@ -22,7 +22,7 @@ import scala.collection.immutable
 sealed trait Action[K] {
   def key: K
 }
-final case class DeleteAction[K](key: K)                        extends Action[K]
+final case class DeleteAction[K](key: K)                     extends Action[K]
 final case class InsAction[K](key: K, value: Blake2b256Hash) extends Action[K]
 
 object HistoryTrie {
