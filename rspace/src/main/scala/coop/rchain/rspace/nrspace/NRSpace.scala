@@ -17,7 +17,7 @@ import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.Seq
 
 class NRSpace[F[_]: Applicative, C, P, A, R, K] private[rspace] (
-    dataStore: DataStore[K, GNAT[C, P, A, K]],
+    dataStore: LeafStore[K, GNAT[C, P, A, K]],
     trieStore: TrieStore[C, P, A, K]
 )(implicit codecK: Codec[K], codecV: Codec[GNAT[C, P, A, K]]) {
 
@@ -101,7 +101,7 @@ class TrieStore[C, P, A, K] {
   ): (Blake2b256Hash, List[(Blake2b256Hash, Trie[K, Data])]) = {
     val data = updates.map {
       case TrieUpdate(_, Delete, channelsHash, _) =>
-        (DelAction(channelsHash), None)
+        (DeleteAction(channelsHash), None)
       case TrieUpdate(_, Insert, channelsHash, gnat) =>
         val leaf: Leaf[K, Data] = Leaf(channelsHash, gnat)
         val hash                = Trie.hash(leaf)
@@ -142,7 +142,7 @@ object NRSpace {
 
     val envData                  = env(path, mapSize)
     val _dbData: Dbi[ByteBuffer] = envData.openDbi("Trie", MDB_CREATE)
-    val dataStore                = new DataStore[K, GNAT[C, P, A, K]](envData, _dbData)
+    val dataStore                = new LeafStore[K, GNAT[C, P, A, K]](envData, _dbData)
     val trieStore                = new TrieStore[C, P, A, K]()
     new NRSpace[F, C, P, A, R, K](dataStore, trieStore)
   }

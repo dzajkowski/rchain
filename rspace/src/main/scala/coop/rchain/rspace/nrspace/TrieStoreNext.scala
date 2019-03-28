@@ -4,7 +4,6 @@ import scodec.Codec
 import scodec.codecs._
 import scodec.bits.{BitVector, ByteVector}
 import coop.rchain.rspace.internal.codecByteVector
-import coop.rchain.rspace.nrspace.TrieStoreNext.TriePath
 import coop.rchain.shared.AttemptOps._
 import TrieStoreNext._
 
@@ -27,10 +26,50 @@ import scala.collection.concurrent.TrieMap
 //  }
 //}
 
-case class HTX() {
-  def process(actions: List[Action]): Blake2b256Hash = {
+trait HT {
+  def get(k: Blake2b256Hash): Trie
+  def put(blake2b256Hash: Blake2b256Hash, t: Trie): Unit
+}
 
+trait PBS {
+  def get(h: Blake2b256Hash): Option[PointerBlock]
+}
+
+case class HTX[K](ha: HT, pbs: PBS, root: Blake2b256Hash)(implicit codecK: Codec[K], ordering: Ordering[List[Byte]]) {
+  def a() = ???
+
+  def process(actions: List[Action[K]]): Blake2b256Hash = {
+    val values = actions.map(a => (codecK.encode(a.key).get.bytes.toSeq.toList, a)).sortBy(_._1)
+    val (path, action) = values.head
+    val r = traverseTrie(path)
+    a(r)
   }
+
+  def isPrefix(affix: ByteVector, cp: List[Byte]): Boolean = {
+    cp.startsWith(affix.toSeq)
+  }
+
+  type TriePath = Vector[Trie]
+
+  private def traverseTrie(path: List[Byte]): (Trie, TriePath) = {
+    // list might be bad here...
+    @tailrec
+    def traverse(t: Trie, cp: List[Byte], path: TriePath): (Trie, TriePath) = {
+      (t, cp) match {
+        case (EmptyTrie, _) => (EmptyTrie, path)
+        case (l:Leaf, Nil) => (t, path :+ l)
+        case (s@Skip(affix, p), _) if isPrefix(affix, cp) => traverse(ha.get(p), cp.drop(affix.size.toInt), path :+ s)
+        case (pn@Node(ptr), h :: tail) =>
+          pbs.get(ptr) match {
+            case Some(pb) => traverse(pb(h), tail, path :+ pn)
+            case None => throw new RuntimeException("malformed trie")
+          }
+        case _ => throw new RuntimeException("malformed trie")
+      }
+    }
+    traverse(ha.get(root), path, Vector.empty[Trie])
+  }
+
 }
 
 //case class HistoryTrieX[K](root: Blake2b256Hash, fetchedPaths: TrieMap[K, TriePath] = TrieMap.empty, trieStore: HTS, pointerBlockStore: HPB)(implicit val codecK: Codec[K]) {
@@ -78,7 +117,7 @@ object TrieStoreNext {
   }
 
   case class HTSI() extends HTS {
-    override def get(hash: LeafPointer): Trie = ???
+    override def get(hash: LeafPointer): Trie              = ???
     override def put(hash: LeafPointer, value: Trie): Unit = ???
   }
 
@@ -88,7 +127,7 @@ object TrieStoreNext {
   }
 
   case class HPBI() extends HPB {
-    override def get(hash: LeafPointer): Option[PointerBlock] = ???
+    override def get(hash: LeafPointer): Option[PointerBlock]      = ???
     override def put(hash: LeafPointer, value: PointerBlock): Unit = ???
   }
 
@@ -97,7 +136,7 @@ object TrieStoreNext {
   type LeafPointer         = Blake2b256Hash
 
   sealed trait Trie
-  sealed trait NonEmptyTrie extends Trie
+  sealed trait NonEmptyTrie                                   extends Trie
   case object EmptyTrie                                       extends Trie
   final case class Skip(affix: ByteVector, hash: TriePointer) extends NonEmptyTrie
   final case class Node(hash: PointerBlockPointer)            extends NonEmptyTrie
@@ -112,10 +151,8 @@ object TrieStoreNext {
 
   //is this good enough?
   sealed trait TriePathNode
-  final case class PathNode(t: NonEmptyTrie) extends TriePathNode
+  final case class PathNode(t: NonEmptyTrie)                    extends TriePathNode
   final case class PartialPointerNode(i: Byte, t: NonEmptyTrie) extends TriePathNode
-
-  type TriePath = Vector[TriePathNode]
 
   object Trie {
     def hash(trie: Trie)(implicit codecTrie: Codec[Trie]): Blake2b256Hash =

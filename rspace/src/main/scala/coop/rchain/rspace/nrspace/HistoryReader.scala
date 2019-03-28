@@ -6,4 +6,3 @@ trait HistoryReader[F[_], C, P, A, K] {
   def getData(channel: C): F[List[Datum[A]]]
   def getContinuation(channels: List[C]): F[List[WaitingContinuation[P, K]]]
 }
-

@@ -19,9 +19,11 @@ import scodec.Codec
 import scala.annotation.tailrec
 import scala.collection.immutable
 
-sealed trait Action
-final case class DelAction[K](key: K)                        extends Action
-final case class InsAction[K](key: K, value: Blake2b256Hash) extends Action
+sealed trait Action[K] {
+  def key: K
+}
+final case class DeleteAction[K](key: K)                        extends Action[K]
+final case class InsAction[K](key: K, value: Blake2b256Hash) extends Action[K]
 
 object HistoryTrie {
   import scodec.Codec
@@ -241,7 +243,7 @@ final case class HistoryTrie[K, V](root: Blake2b256Hash)(
   def insert(k: K, hash: Blake2b256Hash): HistoryTrie[K, V] = ???
   def delete(k: K): HistoryTrie[K, V]                       = ???
 
-  def process(actions: List[Action]): HistoryTrie[K, V] =
+  def process(actions: List[Action[K]]): HistoryTrie[K, V] =
     ???
   @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   // TODO stop throwing exceptions
