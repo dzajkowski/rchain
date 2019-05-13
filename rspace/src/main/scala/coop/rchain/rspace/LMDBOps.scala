@@ -56,7 +56,6 @@ trait LMDBOps[F[_]] extends CloseOps {
         ex.printStackTrace()
         throw ex
     } finally {
-      txn.close()
       updateGauges()
     }
 
@@ -99,14 +98,22 @@ trait LMDBOps[F[_]] extends CloseOps {
 
     def put[V](txn: Txn[ByteBuffer], key: Blake2b256Hash, data: V)(
         implicit codecV: Codec[V]
-    ): Unit =
+    ): Unit = {
+      val x = codecV
+        .encode(data)
+        .map { v =>
+          val bs = v.bytes
+          bs.toDirectByteBuffer
+        }
+        .get
       if (!dbi.put(
             txn,
             key.bytes.toDirectByteBuffer,
-            codecV.encode(data).map(_.bytes.toDirectByteBuffer).get
+            x
           )) {
         throw new Exception(s"could not persist: $data")
       }
+    }
 
     def delete(txn: Txn[ByteBuffer], key: Blake2b256Hash): Unit =
       if (!dbi.delete(txn, key.bytes.toDirectByteBuffer)) {

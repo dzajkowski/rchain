@@ -8,6 +8,7 @@ import cats.effect.{Concurrent, ContextShift, Sync}
 import cats.implicits._
 import cats.mtl.FunctorTell
 import com.google.protobuf.ByteString
+import com.typesafe.scalalogging.Logger
 import coop.rchain.crypto.hash.Blake2b512Random
 import coop.rchain.metrics.Metrics
 import coop.rchain.models.Expr.ExprInstance.GString
@@ -18,10 +19,27 @@ import coop.rchain.models.rholang.implicits._
 import coop.rchain.rholang.interpreter.Runtime._
 import coop.rchain.rholang.interpreter.accounting.{noOpCostLog, _}
 import coop.rchain.rholang.interpreter.errors.SetupError
-import coop.rchain.rholang.interpreter.storage.implicits._
+import coop.rchain.rholang.interpreter.storage.implicits.{serializePar, _}
 import coop.rchain.rspace._
-import coop.rchain.rspace.history.Branch
+import coop.rchain.rspace.history.{
+  codecNonEmptyPointer,
+  Branch,
+  Leaf,
+  Node,
+  PointerBlock,
+  Skip,
+  Trie
+}
+import coop.rchain.rspace.internal.{
+  codecDatum,
+  codecSeq,
+  codecWaitingContinuation,
+  Datum,
+  GNAT,
+  WaitingContinuation
+}
 import coop.rchain.rspace.pure.PureRSpace
+import coop.rchain.rspace.trace.Event
 import coop.rchain.shared.StoreType._
 import coop.rchain.shared.{Log, StoreType}
 
@@ -47,6 +65,8 @@ class Runtime[F[_]: Sync] private (
 }
 
 object Runtime {
+
+  protected[this] val dataLogger: Logger = Logger("coop.rchain.rspace.datametrics")
 
   type RhoISpace[F[_]]       = TCPARK[F, ISpace]
   type RhoPureSpace[F[_]]    = TCPARK[F, PureRSpace]
@@ -455,13 +475,104 @@ object Runtime {
         _         <- if (notexists) Sync[F].delay(Files.createDirectories(dataDir)) else ().pure[F]
       } yield ()
 
+    val introspecter: Introspecter = new Introspecter {
+      override def magic[TK, TV](value: Trie[TK, TV]): Unit = {
+        import coop.rchain.shared.AttemptOps._
+        val codecPar  = serializePar.toCodec
+        val codecPars = serializePars.toCodec
+        val cbp       = serializeBindPattern.toCodec
+        val ctc       = serializeTaggedContinuation.toCodec
+
+        val g = internal.codecGNAT(codecPar, cbp, codecPars, ctc)
+        val b = Blake2b256Hash.codecBlake2b256Hash
+        val tc = Trie
+          .codecTrie[Blake2b256Hash, GNAT[Par, BindPattern, ListParWithRandom, TaggedContinuation]](
+            b,
+            g
+          )
+        val l = value.asInstanceOf[
+          Trie[Blake2b256Hash, GNAT[Par, BindPattern, ListParWithRandom, TaggedContinuation]]
+        ]
+        val sv = tc
+          .encode(l)
+          .get
+          .toByteVector
+        value match {
+          case Leaf(_, v) =>
+            dataLogger.debug(s"leaf;${sv.size}")
+            v match {
+              case GNAT(chs, data, wks) =>
+                chs match {
+                  case _: Seq[Any] =>
+                    val x = chs.asInstanceOf[Seq[Par]]
+                    val k = codecSeq(codecPar)
+                    val s = k.encode(x).get.toByteVector
+                    dataLogger.debug(s"leaf:channels;${s.size}")
+                }
+                data match {
+                  case _: Seq[Any] =>
+                    val x   = data.asInstanceOf[Seq[Datum[ListParWithRandom]]]
+                    val k   = codecSeq(codecDatum(codecPars))
+                    val s   = k.encode(x).get.toByteVector
+                    val dp  = codecPars
+                    val con = Event.codecEvent
+                    dataLogger.debug(s"leaf:data;${s.size}")
+                    x.foreach { d =>
+                      dataLogger.debug(s"leaf:data:a;${dp.encode(d.a).get.toByteVector.size}")
+                      dataLogger.debug(
+                        s"leaf:data:source;${con.encode(d.source).get.toByteVector.size}"
+                      )
+                    }
+                }
+                wks match {
+                  case _: Seq[Any] =>
+                    val x =
+                      wks.asInstanceOf[Seq[WaitingContinuation[BindPattern, TaggedContinuation]]]
+                    x match {
+                      case _: Seq[WaitingContinuation[BindPattern, TaggedContinuation]] =>
+                        val con = Event.codecEvent
+                        val seq = codecSeq(cbp)
+                        val k   = codecSeq(codecWaitingContinuation(cbp, ctc))
+                        val s   = k.encode(x).get.toByteVector
+
+                        dataLogger.debug(s"leaf:wks;${s.size}")
+                        x.foreach { r =>
+                          dataLogger.debug(
+                            s"leaf:wks:patterns;${seq.encode(r.patterns).get.toByteVector.size}"
+                          )
+                          dataLogger.debug(
+                            s"leaf:wks:continuation;${ctc.encode(r.continuation).get.toByteVector.size}"
+                          )
+                          dataLogger.debug(
+                            s"leaf:wks:source;${con.encode(r.source).get.toByteVector.size}"
+                          )
+                        }
+                    }
+                }
+            }
+          case Node(pb) =>
+            dataLogger.debug(s"node;${sv.size}")
+            dataLogger.debug(
+              s"node:pb;${PointerBlock.codecPointerBlock.encode(pb).get.toByteVector.size}"
+            )
+
+          case Skip(affix, ptr) =>
+            dataLogger.debug(s"skip;${sv.size}")
+            dataLogger.debug(
+              s"skip:affix;${internal.codecByteVector.encode(affix).get.toByteVector.size}"
+            )
+            dataLogger.debug(s"skip:ptr;${codecNonEmptyPointer.encode(ptr).get.toByteVector.size}")
+        }
+      }
+    }
+
     storeType match {
       case InMem =>
         createSpace(Context.createInMemory())
       case LMDB =>
         checkCreateDataDir >> createSpace(Context.create(dataDir, mapSize, true))
       case Mixed =>
-        checkCreateDataDir >> createSpace(Context.createMixed(dataDir, mapSize))
+        checkCreateDataDir >> createSpace(Context.createMixed(dataDir, mapSize, introspecter))
     }
   }
 }

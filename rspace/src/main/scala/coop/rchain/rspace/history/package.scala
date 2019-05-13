@@ -28,7 +28,7 @@ package object history {
             el match {
               case (_, s: Skip) => acc + s.affix.size
               case _            => acc + 1L
-          }
+            }
         )
 
   }

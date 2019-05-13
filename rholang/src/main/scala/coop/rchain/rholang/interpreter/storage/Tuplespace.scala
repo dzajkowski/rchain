@@ -82,6 +82,7 @@ object Tuplespace {
                   Parallel
                     .parProduct(
                       dispatcher.dispatch(continuation, dataList, updatedSequenceNumber),
+                      //THISPR <-- check if this isn't redundant!
                       consume(binds, body, persistent, sequenceNumber)
                     )
                     .as(())

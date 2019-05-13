@@ -44,7 +44,7 @@ object RholangCLI {
     val mapSize = opt[Long](
       required = false,
       descr = "Map size (in bytes)",
-      default = Some(1024L * 1024L * 1024L)
+      default = Some(1024L * 100)
     )
 
     val files =
@@ -65,7 +65,7 @@ object RholangCLI {
       runtime <- Runtime.createWithEmptyCost[Task, Task.Par](
                   conf.dataDir(),
                   conf.mapSize(),
-                  StoreType.LMDB
+                  StoreType.Mixed
                 )
       _ <- Runtime.injectEmptyRegistryRoot[Task](runtime.space, runtime.replaySpace)
     } yield (runtime)).unsafeRunSync

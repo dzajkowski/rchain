@@ -1,9 +1,10 @@
 package coop.rchain.rspace.history
 
 import java.nio.ByteBuffer
-import java.nio.file.Path
+import java.nio.file.{Path, Paths}
 
 import cats.effect.Sync
+import com.typesafe.scalalogging.Logger
 
 import scala.collection.JavaConverters._
 import coop.rchain.rspace.{Blake2b256Hash, LMDBOps, _}
@@ -15,6 +16,7 @@ import org.lmdbjava._
 import org.lmdbjava.DbiFlags.MDB_CREATE
 import scodec.Codec
 import scodec.bits.BitVector
+import coop.rchain.shared.PathOps._
 
 @SuppressWarnings(Array("org.wartremover.warts.Throw", "org.wartremover.warts.NonUnitStatements")) // TODO stop throwing exceptions
 class LMDBTrieStore[F[_], K, V] private (
@@ -23,7 +25,8 @@ class LMDBTrieStore[F[_], K, V] private (
     _dbTrie: Dbi[ByteBuffer],
     _dbRoot: Dbi[ByteBuffer],
     _dbPastRoots: Dbi[ByteBuffer],
-    _dbEmptyRoots: Dbi[ByteBuffer]
+    _dbEmptyRoots: Dbi[ByteBuffer],
+    introspecter: Introspecter
 )(
     implicit
     codecK: Codec[K],
@@ -32,10 +35,22 @@ class LMDBTrieStore[F[_], K, V] private (
 ) extends ITrieStore[Txn[ByteBuffer], K, V]
     with LMDBOps[F] {
 
+  println(databasePath)
+  val dbf = databasePath.resolve("data.mdb")
+
+  protected[this] val dataLogger: Logger = Logger("coop.rchain.rspace.datametrics")
+
   protected override def metricsSource: String = RSpaceMetricsSource + ".history.lmdb"
 
-  private[rspace] def put(txn: Txn[ByteBuffer], key: Blake2b256Hash, value: Trie[K, V]): Unit =
+  private[rspace] def put(txn: Txn[ByteBuffer], key: Blake2b256Hash, value: Trie[K, V]): Unit = {
     _dbTrie.put(txn, key, value)
+    val stat1 = _dbTrie.stat(txn)
+    dataLogger.debug(s"rspace:computedSize;${stat1.pageSize * stat1.leafPages}")
+    dataLogger.debug(s"rspace:entries;${stat1.entries}")
+    dataLogger.debug(s"rspace:depth;${stat1.depth}")
+    dataLogger.debug(s"rspace:filesize;${dbf.toFile.length()}")
+    introspecter.magic(value)
+  }
 
   private[rspace] def get(txn: Txn[ByteBuffer], key: Blake2b256Hash): Option[Trie[K, V]] =
     _dbTrie.get(txn, key)(Codec[Trie[K, V]])
@@ -122,7 +137,11 @@ class LMDBTrieStore[F[_], K, V] private (
 
 object LMDBTrieStore {
 
-  def create[F[_], K, V](env: Env[ByteBuffer], path: Path)(
+  def create[F[_], K, V](
+      env: Env[ByteBuffer],
+      path: Path,
+      introspecter: Introspecter = IntrospecterInstances.noop()
+  )(
       implicit
       codecK: Codec[K],
       codecV: Codec[V],
@@ -132,7 +151,7 @@ object LMDBTrieStore {
     val dbRoots: Dbi[ByteBuffer]     = env.openDbi("Roots", MDB_CREATE)
     val dbEmptyRoot: Dbi[ByteBuffer] = env.openDbi("EmptyRoot", MDB_CREATE)
     val dbPastRoots: Dbi[ByteBuffer] = env.openDbi("PastRoots", MDB_CREATE)
-    new LMDBTrieStore[F, K, V](env, path, dbTrie, dbRoots, dbPastRoots, dbEmptyRoot)
+    new LMDBTrieStore[F, K, V](env, path, dbTrie, dbRoots, dbPastRoots, dbEmptyRoot, introspecter)
   }
 
   private val emptyRootKey = stringCodec.encode("emptyRoot").get.bytes.toDirectByteBuffer

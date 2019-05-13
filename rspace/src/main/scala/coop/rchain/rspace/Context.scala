@@ -140,6 +140,7 @@ object Context {
   def createMixed[F[_], C, P, A, K](
       path: Path,
       mapSize: Long,
+      introspecter: Introspecter = IntrospecterInstances.noop(),
       flags: List[EnvFlags] = List(EnvFlags.MDB_NOTLS)
   )(
       implicit
@@ -157,7 +158,8 @@ object Context {
 
     val env = Context.env(path, mapSize, flags)
 
-    val trieStore = LMDBTrieStore.create[F, Blake2b256Hash, GNAT[C, P, A, K]](env, path)
+    val trieStore =
+      LMDBTrieStore.create[F, Blake2b256Hash, GNAT[C, P, A, K]](env, path, introspecter)
 
     new MixedContext[F, C, P, A, K](env, trieStore)
   }
