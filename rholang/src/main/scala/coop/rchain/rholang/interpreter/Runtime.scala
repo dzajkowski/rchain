@@ -69,7 +69,8 @@ class Runtime[F[_]: Sync] private (
 object Runtime {
 
   protected[this] val dataLogger: Logger = Logger("coop.rchain.rspace.datametrics")
-  protected[this] val blobLogger: Logger = Logger("coop.rchain.rspace.blobs")
+
+  val pp = PrettyPrinter()
 
   type RhoISpace[F[_]]       = TCPARK[F, ISpace]
   type RhoPureSpace[F[_]]    = TCPARK[F, PureRSpace]
@@ -512,6 +513,9 @@ object Runtime {
                     val k = codecSeq(codecPar)
                     val s = k.encode(x).get.toByteVector
                     dataLogger.debug(s"leaf:channels;$key;${s.size};${chs.size}")
+                    x.foreach(
+                      v => dataLogger.debug(s"leaf:channels:pretty;$key;${pp.buildString(v)};1")
+                    )
                 }
                 data match {
                   case _: Seq[Any] =>
@@ -531,6 +535,11 @@ object Runtime {
                       dataLogger.debug(
                         s"leaf:data:a:pars;$key;${codecParSeq.encode(d.a.pars).get.toByteVector.size};${d.a.pars.size}"
                       )
+                      d.a.pars.foreach(v => {
+                        dataLogger.debug(
+                          s"leaf:data:a:pars:pretty;$key;${pp.buildString(v)};1"
+                        )
+                      })
                       dataLogger.debug(
                         s"leaf:data:source;$key;${con.encode(d.source).get.toByteVector.size};1"
                       )
@@ -552,6 +561,16 @@ object Runtime {
                           dataLogger.debug(
                             s"leaf:wks:patterns;$key;${seq.encode(r.patterns).get.toByteVector.size};1"
                           )
+                          r.patterns.foreach(
+                            v => {
+                              v.patterns.foreach(
+                                l =>
+                                  dataLogger.debug(
+                                    s"leaf:wks:patterns:patterns:pretty;$key;${pp.buildString(l)};1"
+                                  )
+                              )
+                            }
+                          )
                           dataLogger.debug(
                             s"leaf:wks:continuation;$key;${ctc.encode(r.continuation).get.toByteVector.size};1"
                           )
@@ -563,6 +582,9 @@ object Runtime {
                             )
                             dataLogger.debug(
                               s"leaf:wks:continuation:parb:par;$key;${serializePar.encode(pwr.body).size};1"
+                            )
+                            dataLogger.debug(
+                              s"leaf:wks:continuation:parb:par:pretty;$key;${pp.buildString(pwr.body)};1"
                             )
                           })
 

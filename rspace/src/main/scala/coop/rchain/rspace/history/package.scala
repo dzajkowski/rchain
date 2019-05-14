@@ -510,7 +510,7 @@ package object history {
               store.putRoot(txn, branch, newRootHash)
               logger.debug(s"workingRootHash: $newRootHash")
               true
-            case Skip(_, LeafPointer(_)) =>
+            case Skip(_, _) =>
               logger.debug(s"workingRootHash: $currentRootHash")
               false
             // The entry is not in the trie

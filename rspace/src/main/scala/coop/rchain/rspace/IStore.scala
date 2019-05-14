@@ -110,13 +110,16 @@ trait IStore[F[_], C, P, A, K] {
   @SuppressWarnings(Array("org.wartremover.warts.Throw"))
   // TODO stop throwing exceptions
   def createCheckpoint(): Blake2b256Hash = {
+    println("-----------------------------------======")
     val trieUpdates = getAndClearTrieUpdates()
     collapse(trieUpdates).foreach(processTrieUpdate)
-    trieStore.withTxn(trieStore.createTxnWrite()) { txn =>
+    val x = trieStore.withTxn(trieStore.createTxnWrite()) { txn =>
       trieStore
         .persistAndGetRoot(txn, trieBranch)
         .getOrElse(throw new Exception("Could not get root hash"))
     }
+    println("-----------------------------------::::::")
+    x
   }
 
   private[rspace] def collapse(in: Seq[TrieUpdate[C, P, A, K]]): Seq[TrieUpdate[C, P, A, K]] =

@@ -274,8 +274,10 @@ class LockFreeInMemoryStore[F[_], T, C, P, A, K](
     measure(update)
     update match {
       case TrieUpdate(_, Insert, channelsHash, gnat) =>
+        println("insert == " + channelsHash)
         history.insert(trieStore, trieBranch, channelsHash, canonicalize(gnat))
       case TrieUpdate(_, Delete, channelsHash, gnat) =>
+        println("delete == " + channelsHash)
         history.delete(trieStore, trieBranch, channelsHash, canonicalize(gnat))
     }
   }
