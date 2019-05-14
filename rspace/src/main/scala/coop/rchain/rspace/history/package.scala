@@ -1,6 +1,7 @@
 package coop.rchain.rspace
 
 import java.lang.{Byte => JByte}
+import java.nio.charset.Charset
 
 import internal._
 import cats.Eq
@@ -10,8 +11,11 @@ import cats.syntax.eq._
 import cats.syntax.traverse._
 import com.typesafe.scalalogging.Logger
 import coop.rchain.catscontrib.seq._
+import coop.rchain.rspace.history.{codecPointer, PointerBlock}
+import coop.rchain.rspace.history.PointerBlock.length
 import scodec.Codec
 import scodec.bits.ByteVector
+import scodec.codecs.{discriminated, provide, vectorOfN}
 
 import scala.annotation.tailrec
 
@@ -522,7 +526,7 @@ package object history {
 
   implicit val codecPointer: Codec[Pointer] =
     discriminated[Pointer]
-      .by(uint8)
+      .by(uint2)
       .subcaseP(0) {
         case value: LeafPointer => value
       }(Blake2b256Hash.codecBlake2b256Hash.as[LeafPointer])
@@ -535,7 +539,7 @@ package object history {
 
   implicit val codecNonEmptyPointer: Codec[NonEmptyPointer] =
     discriminated[NonEmptyPointer]
-      .by(uint8)
+      .by(uint2)
       .subcaseP(0) {
         case value: LeafPointer => value
       }(Blake2b256Hash.codecBlake2b256Hash.as[LeafPointer])

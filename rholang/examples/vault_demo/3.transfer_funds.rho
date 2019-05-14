@@ -37,6 +37,6 @@ in {
   } |
 
   contract log(@data) = {
-    @"DEMO"!(data) | stdout!(data)
+    stdout!(data)
   }
 }

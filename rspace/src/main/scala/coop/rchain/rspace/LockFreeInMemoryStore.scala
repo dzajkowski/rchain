@@ -249,26 +249,26 @@ class LockFreeInMemoryStore[F[_], T, C, P, A, K](
 
   protected[this] val dataLogger: Logger = Logger("coop.rchain.rspace.datametrics")
 
-  private def measure(value: TrieUpdate[C, P, A, K]): Unit =
-    dataLogger.whenDebugEnabled {
-      val maybeData = value match {
-        case _ @TrieUpdate(_, operation, channelsHash, gnat) =>
-          val hex     = channelsHash.bytes.toHex
-          val data    = gnat.data
-          val dataLen = Codec[Seq[Datum[A]]].encode(data).get.size
-          val wks     = gnat.wks
-          val wksLen  = Codec[Seq[WaitingContinuation[P, K]]].encode(wks).get.size
-          val gnatLen = Codec[GNAT[C, P, A, K]].encode(gnat).get.size
-          Some((hex, gnatLen, operation.toString, data.size, dataLen, wks.size, wksLen))
-        case _ => None
-      }
-      maybeData.foreach {
-        case (key, size, action, datumSize, datumLen, continuationSize, continuationLen) =>
-          dataLogger.debug(
-            s"$key;$size;$action;$datumSize;$datumLen;$continuationLen;$continuationSize"
-          )
-      }
-    }
+  private def measure(value: TrieUpdate[C, P, A, K]): Unit = ()
+//    dataLogger.whenDebugEnabled {
+//      val maybeData = value match {
+//        case _ @TrieUpdate(_, operation, channelsHash, gnat) =>
+//          val hex     = channelsHash.bytes.toHex
+//          val data    = gnat.data
+//          val dataLen = Codec[Seq[Datum[A]]].encode(data).get.size
+//          val wks     = gnat.wks
+//          val wksLen  = Codec[Seq[WaitingContinuation[P, K]]].encode(wks).get.size
+//          val gnatLen = Codec[GNAT[C, P, A, K]].encode(gnat).get.size
+//          Some((hex, gnatLen, operation.toString, data.size, dataLen, wks.size, wksLen))
+//        case _ => None
+//      }
+//      maybeData.foreach {
+//        case (key, size, action, datumSize, datumLen, continuationSize, continuationLen) =>
+//          dataLogger.debug(
+//            s"$key;$size;$action;$datumSize;$datumLen;$continuationLen;$continuationSize"
+//          )
+//      }
+//    }
 
   protected def processTrieUpdate(update: TrieUpdate[C, P, A, K]): Unit = {
     measure(update)

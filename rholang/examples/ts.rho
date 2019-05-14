@@ -33,6 +33,6 @@ new rl(`rho:registry:lookup`), RevVaultCh, stdout(`rho:io:stdout`), log in {
   } |
 
   contract log(@data) = {
-    @"DEMO"!(data) | stdout!(data)
+    stdout!(data)
   }
 }

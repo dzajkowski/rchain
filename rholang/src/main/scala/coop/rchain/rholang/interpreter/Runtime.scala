@@ -16,6 +16,7 @@ import coop.rchain.models.TaggedContinuation.TaggedCont.ScalaBodyRef
 import coop.rchain.models.Var.VarInstance.FreeVar
 import coop.rchain.models._
 import coop.rchain.models.rholang.implicits._
+import coop.rchain.models.serialization.implicits.mkProtobufInstance
 import coop.rchain.rholang.interpreter.Runtime._
 import coop.rchain.rholang.interpreter.accounting.{noOpCostLog, _}
 import coop.rchain.rholang.interpreter.errors.SetupError
@@ -24,6 +25,7 @@ import coop.rchain.rspace._
 import coop.rchain.rspace.history.{
   codecNonEmptyPointer,
   Branch,
+  EmptyPointer,
   Leaf,
   Node,
   PointerBlock,
@@ -67,6 +69,7 @@ class Runtime[F[_]: Sync] private (
 object Runtime {
 
   protected[this] val dataLogger: Logger = Logger("coop.rchain.rspace.datametrics")
+  protected[this] val blobLogger: Logger = Logger("coop.rchain.rspace.blobs")
 
   type RhoISpace[F[_]]       = TCPARK[F, ISpace]
   type RhoPureSpace[F[_]]    = TCPARK[F, PureRSpace]
@@ -476,12 +479,13 @@ object Runtime {
       } yield ()
 
     val introspecter: Introspecter = new Introspecter {
-      override def magic[TK, TV](value: Trie[TK, TV]): Unit = {
+      override def magic[TK, TV](key: Blake2b256Hash, value: Trie[TK, TV]): Unit = {
         import coop.rchain.shared.AttemptOps._
-        val codecPar  = serializePar.toCodec
-        val codecPars = serializePars.toCodec
-        val cbp       = serializeBindPattern.toCodec
-        val ctc       = serializeTaggedContinuation.toCodec
+        val codecPar    = serializePar.toCodec
+        val codecPars   = serializePars.toCodec
+        val codecParSeq = codecSeq(codecPar)
+        val cbp         = serializeBindPattern.toCodec
+        val ctc         = serializeTaggedContinuation.toCodec
 
         val g = internal.codecGNAT(codecPar, cbp, codecPars, ctc)
         val b = Blake2b256Hash.codecBlake2b256Hash
@@ -499,7 +503,7 @@ object Runtime {
           .toByteVector
         value match {
           case Leaf(_, v) =>
-            dataLogger.debug(s"leaf;${sv.size}")
+            dataLogger.debug(s"leaf;$key;${sv.size}")
             v match {
               case GNAT(chs, data, wks) =>
                 chs match {
@@ -507,7 +511,7 @@ object Runtime {
                     val x = chs.asInstanceOf[Seq[Par]]
                     val k = codecSeq(codecPar)
                     val s = k.encode(x).get.toByteVector
-                    dataLogger.debug(s"leaf:channels;${s.size}")
+                    dataLogger.debug(s"leaf:channels;$key;${s.size};${chs.size}")
                 }
                 data match {
                   case _: Seq[Any] =>
@@ -516,11 +520,19 @@ object Runtime {
                     val s   = k.encode(x).get.toByteVector
                     val dp  = codecPars
                     val con = Event.codecEvent
-                    dataLogger.debug(s"leaf:data;${s.size}")
+                    dataLogger.debug(s"leaf:data;$key;${s.size};${data.size}")
                     x.foreach { d =>
-                      dataLogger.debug(s"leaf:data:a;${dp.encode(d.a).get.toByteVector.size}")
                       dataLogger.debug(
-                        s"leaf:data:source;${con.encode(d.source).get.toByteVector.size}"
+                        s"leaf:data:a;$key;${dp.encode(d.a).get.toByteVector.size};1"
+                      )
+                      dataLogger.debug(
+                        s"leaf:data:a:rnd;$key;${Blake2b512Random.typeMapper.toBase(d.a.randomState).size()};1"
+                      )
+                      dataLogger.debug(
+                        s"leaf:data:a:pars;$key;${codecParSeq.encode(d.a.pars).get.toByteVector.size};${d.a.pars.size}"
+                      )
+                      dataLogger.debug(
+                        s"leaf:data:source;$key;${con.encode(d.source).get.toByteVector.size};1"
                       )
                     }
                 }
@@ -535,33 +547,54 @@ object Runtime {
                         val k   = codecSeq(codecWaitingContinuation(cbp, ctc))
                         val s   = k.encode(x).get.toByteVector
 
-                        dataLogger.debug(s"leaf:wks;${s.size}")
+                        dataLogger.debug(s"leaf:wks;$key;${s.size};${x.size}")
                         x.foreach { r =>
                           dataLogger.debug(
-                            s"leaf:wks:patterns;${seq.encode(r.patterns).get.toByteVector.size}"
+                            s"leaf:wks:patterns;$key;${seq.encode(r.patterns).get.toByteVector.size};1"
                           )
                           dataLogger.debug(
-                            s"leaf:wks:continuation;${ctc.encode(r.continuation).get.toByteVector.size}"
+                            s"leaf:wks:continuation;$key;${ctc.encode(r.continuation).get.toByteVector.size};1"
                           )
+                          val parbO = r.continuation.taggedCont.parBody
+
+                          parbO.foreach(pwr => {
+                            dataLogger.debug(
+                              s"leaf:wks:continuation:parb:rnd;$key;${Blake2b512Random.typeMapper.toBase(pwr.randomState).size()};1"
+                            )
+                            dataLogger.debug(
+                              s"leaf:wks:continuation:parb:par;$key;${serializePar.encode(pwr.body).size};1"
+                            )
+                          })
+
+                          val scalaref = r.continuation.taggedCont.scalaBodyRef
+                          scalaref.foreach { s =>
+                            dataLogger.debug(
+                              s"leaf:wks:continuation:scar;$key;0;1"
+                            )
+                          }
+
                           dataLogger.debug(
-                            s"leaf:wks:source;${con.encode(r.source).get.toByteVector.size}"
+                            s"leaf:wks:source;$key;${con.encode(r.source).get.toByteVector.size};1"
                           )
                         }
                     }
                 }
             }
           case Node(pb) =>
-            dataLogger.debug(s"node;${sv.size}")
-            dataLogger.debug(
-              s"node:pb;${PointerBlock.codecPointerBlock.encode(pb).get.toByteVector.size}"
-            )
+            dataLogger.debug(s"node;$key;${sv.size};1")
+            dataLogger.debug {
+              s"node:pb;$key;${PointerBlock.codecPointerBlock.encode(pb).get.toByteVector.size};${pb.toVector
+                .count(_ != EmptyPointer)}"
+            }
 
           case Skip(affix, ptr) =>
-            dataLogger.debug(s"skip;${sv.size}")
+            dataLogger.debug(s"skip;$key;${sv.size}")
             dataLogger.debug(
-              s"skip:affix;${internal.codecByteVector.encode(affix).get.toByteVector.size}"
+              s"skip:affix;$key;${internal.codecByteVector.encode(affix).get.toByteVector.size}"
             )
-            dataLogger.debug(s"skip:ptr;${codecNonEmptyPointer.encode(ptr).get.toByteVector.size}")
+            dataLogger.debug(
+              s"skip:ptr;$key;${codecNonEmptyPointer.encode(ptr).get.toByteVector.size}"
+            )
         }
       }
     }

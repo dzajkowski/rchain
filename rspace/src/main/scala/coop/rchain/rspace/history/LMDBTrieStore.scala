@@ -45,11 +45,11 @@ class LMDBTrieStore[F[_], K, V] private (
   private[rspace] def put(txn: Txn[ByteBuffer], key: Blake2b256Hash, value: Trie[K, V]): Unit = {
     _dbTrie.put(txn, key, value)
     val stat1 = _dbTrie.stat(txn)
-    dataLogger.debug(s"rspace:computedSize;${stat1.pageSize * stat1.leafPages}")
-    dataLogger.debug(s"rspace:entries;${stat1.entries}")
-    dataLogger.debug(s"rspace:depth;${stat1.depth}")
-    dataLogger.debug(s"rspace:filesize;${dbf.toFile.length()}")
-    introspecter.magic(value)
+    dataLogger.debug(s"rspace:computedSize;;${stat1.pageSize * stat1.leafPages}")
+    dataLogger.debug(s"rspace:entries;;${stat1.entries}")
+    dataLogger.debug(s"rspace:depth;;${stat1.depth}")
+    dataLogger.debug(s"rspace:filesize;;${dbf.toFile.length()}")
+    introspecter.magic(key, value)
   }
 
   private[rspace] def get(txn: Txn[ByteBuffer], key: Blake2b256Hash): Option[Trie[K, V]] =
