@@ -40,6 +40,9 @@ object History {
     Skip(ByteVector(affix), NodePointer(pb.hash))
 
   type KeyPath = Seq[Byte]
+
+  val keyPathOrdering: Ordering[KeyPath] =
+    Ordering.Implicits.seqDerivedOrdering(Ordering.Byte)
 }
 
 sealed trait Trie

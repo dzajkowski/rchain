@@ -205,6 +205,7 @@ object HistoryInstances {
       // TODO this is an intermediate step to reproduce all the trie behavior
       // will evolve to a fold based implementation with partial tries
       actions
+        .sortBy(_.key)(keyPathOrdering)
         .foldLeftM(this.root) {
           case (currentRoot, InsertAction(remainingPath, value)) =>
             for {
