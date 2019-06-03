@@ -349,6 +349,7 @@ object HistoryInstances {
           val ts           = getValue(head)
           for {
             _    <- historyStore.put(ts)
+            _    = cache.remove(head)
             refs = ts.flatMap(extractRefs)
           } yield (refs ++ rest).asLeft
         }
