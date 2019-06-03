@@ -7,14 +7,17 @@ import coop.rchain.rspace.Blake2b256Hash
 import coop.rchain.rspace.nextgenrspace.history.History._
 import scodec.bits.ByteVector
 
+import scala.collection.concurrent.TrieMap
+
 object HistoryInstances {
 
   val MalformedTrieError = new RuntimeException("malformed trie")
 
   final case class MergingHistory[F[_]: Sync](
       root: Blake2b256Hash,
-      historyStore: HistoryStore[F]
+      historyStore: CachingHistoryStore[F]
   ) extends History[F] {
+
     def skip(path: History.KeyPath, ptr: ValuePointer): (TriePointer, Option[Trie]) =
       if (path.isEmpty) {
         (ptr, None)
@@ -227,6 +230,12 @@ object HistoryInstances {
               _ <- historyStore.put(elements)
             } yield elements.lastOption.map(Trie.hash).getOrElse(currentRoot)
         }
+        .flatMap { newRoot =>
+          historyStore.commit(newRoot).as(newRoot)
+        }
+        .flatMap { newRoot =>
+          historyStore.clear().as(newRoot)
+        }
         .map(newRoot => this.copy(root = newRoot))
 
     private[history] def findPath(
@@ -285,11 +294,66 @@ object HistoryInstances {
       case (trie, path) => (trie, path.nodes)
     }
 
-    def reset(root: Blake2b256Hash): History[F] = this.copy(root = root)
+    override def close(): F[Unit] = historyStore.close()
 
-    def close(): F[Unit] = historyStore.close()
+    override def reset(root: Blake2b256Hash): History[F] = this.copy(root = root)
+
   }
 
   def merging[F[_]: Sync](root: Blake2b256Hash, historyStore: HistoryStore[F]): History[F] =
-    new MergingHistory[F](root, historyStore)
+    new MergingHistory[F](root, CachingHistoryStore(historyStore))
+
+  final case class CachingHistoryStore[F[_]: Sync](historyStore: HistoryStore[F])
+      extends HistoryStore[F] {
+    val cache: TrieMap[Blake2b256Hash, Trie] = TrieMap.empty
+
+    override def put(tries: List[Trie]): F[Unit] =
+      Sync[F].delay {
+        tries.foreach { t =>
+          cache.put(Trie.hash(t), t)
+        }
+      }
+
+    override def get(key: Blake2b256Hash): F[Trie] = cache.get(key) match {
+      case None    => historyStore.get(key)
+      case Some(v) => Applicative[F].pure(v)
+    }
+
+    override def close(): F[Unit] = historyStore.close()
+
+    def clear(): F[Unit] = Sync[F].delay {
+      cache.clear()
+    }
+
+    @SuppressWarnings(Array("org.wartremover.warts.Throw"))
+    def commit(key: Blake2b256Hash): F[Unit] = {
+      def getValue(key: Blake2b256Hash): List[Trie] =
+        cache.get(key).toList // if a key exist in cache - we want to process it
+      def extractRefs(t: Trie): Seq[Blake2b256Hash] =
+        t match {
+          case pb: PointerBlock =>
+            pb.toVector.toList.filter(_ != EmptyPointer).flatMap {
+              case v: SkipPointer => v.hash :: Nil
+              case v: NodePointer => v.hash :: Nil
+              case _              => Nil
+            }
+          case Skip(_, LeafPointer(_))    => Nil
+          case Skip(_, NodePointer(hash)) => hash :: Nil
+          case EmptyTrie                  => Nil
+        }
+
+      def go(keys: List[Blake2b256Hash]): F[Either[List[Blake2b256Hash], Unit]] =
+        if (keys.isEmpty) Sync[F].pure(().asRight)
+        else {
+          val head :: rest = keys
+          val ts           = getValue(head)
+          for {
+            _    <- historyStore.put(ts)
+            refs = ts.flatMap(extractRefs)
+          } yield (refs ++ rest).asLeft
+        }
+      Sync[F].tailRecM(key :: Nil)(go)
+    }
+
+  }
 }
