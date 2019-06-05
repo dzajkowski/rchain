@@ -11,7 +11,7 @@ import scala.collection.concurrent.TrieMap
 
 object HistoryInstances {
 
-  val MalformedTrieError = new RuntimeException("malformed trie")
+  def MalformedTrieError = new RuntimeException("malformed trie")
 
   final case class MergingHistory[F[_]: Sync](
       root: Blake2b256Hash,
@@ -203,22 +203,115 @@ object HistoryInstances {
       FlatMap[F].tailRecM((fullPath, trieNodesOnPath, none[Trie]))(go)
     }
 
-    def process(actions: List[HistoryAction]): F[History[F]] =
-      // TODO this is an intermediate step to reproduce all the trie behavior
-      // will evolve to a fold based implementation with partial tries
+    def findUncommonNode(
+        currentPath: KeyPath,
+        previousPath: KeyPath,
+        previousRoot: Trie
+    ): F[Option[Blake2b256Hash]] = {
+      def commonPrefixWithLastDiverging(path: KeyPath, affix: ByteVector): Boolean =
+        affix.toSeq.startsWith(path.dropRight(1))
+
+      def handlePointerToPointerBlock(
+          ptr: ValuePointer
+      ): F[Either[(KeyPath, Trie), Option[Blake2b256Hash]]] =
+        ptr match {
+          case _: LeafPointer => Applicative[F].pure(none.asRight) // ignore leaf
+          case NodePointer(hash) =>
+            Applicative[F].pure(hash.some.asRight) // pick pointerBlock
+        }
+
+      def pathTerminatesInAffix(path: KeyPath, affix: KeyPath): Boolean =
+        affix == path || affix.startsWith(path) || (path.size == 1 && affix.startsWith(path))
+
+      type Params = (KeyPath, Trie)
+      def go(params: Params): F[Either[(KeyPath, Trie), Option[Blake2b256Hash]]] =
+        params match {
+          // whatever lives beneath the skip can be persisted
+          case (path, Skip(affix, ptr)) if pathTerminatesInAffix(path, affix.toSeq) =>
+            handlePointerToPointerBlock(ptr)
+
+          // traverse non-terminal skip
+          case (path, Skip(affix, ptr)) if path.startsWith(affix.toSeq) =>
+            ptr match {
+              case _: LeafPointer => Sync[F].raiseError(MalformedTrieError)
+              case NodePointer(hash) =>
+                historyStore
+                  .get(hash)
+                  .map(v => (path.drop(affix.size.toInt), v).asLeft)
+            }
+
+          // the path does not exist but some other skip lives near it == a node was removed
+          case (path, Skip(affix, _)) if commonPrefixWithLastDiverging(path, affix) =>
+            Applicative[F].pure(None.asRight) // removed path
+
+          case (b :: Nil, PointerBlock(pointers)) => // interpret terminal pointer block
+            pointers(toInt(b)) match {
+              case SkipPointer(hash) => Applicative[F].pure(hash.some.asRight)
+              case NodePointer(hash) => Applicative[F].pure(hash.some.asRight)
+              case _: LeafPointer    => Applicative[F].pure(None.asRight) // ignore leaf
+              case EmptyPointer      => Applicative[F].pure(None.asRight) // removed path
+            }
+
+          case (b :: rest, PointerBlock(pointers)) => // traverse non-terminal pointer block
+            pointers(toInt(b)) match {
+              case SkipPointer(hash) => historyStore.get(hash).map(v => (rest, v).asLeft)
+              case NodePointer(hash) => historyStore.get(hash).map(v => (rest, v).asLeft)
+              case _: LeafPointer    => Sync[F].raiseError(MalformedTrieError)
+              case EmptyPointer      => Applicative[F].pure(None.asRight) // removed path
+            }
+
+          case _ => Sync[F].raiseError(MalformedTrieError)
+        }
+
+      val common = commonPrefix(previousPath, currentPath)
+      if (common == currentPath) Applicative[F].pure(none[Blake2b256Hash])
+      else {
+        val withFirstUncommon = previousPath.take(common.size + 1)
+        Sync[F].tailRecM((withFirstUncommon, previousRoot))(go)
+      }
+    }
+
+    def commitUncommonLeftSubtrie(
+        currentPath: KeyPath,
+        previousPath: KeyPath,
+        previousRoot: Trie
+    ): F[Unit] =
+      for {
+        hashOpt <- findUncommonNode(currentPath, previousPath, previousRoot)
+        _ <- hashOpt match {
+              case None       => Applicative[F].unit
+              case Some(hash) => historyStore.commit(hash)
+            }
+      } yield ()
+
+    def commitPreviousModification(
+        currentPath: KeyPath,
+        previousModificationOpt: Option[(KeyPath, Trie)]
+    ): F[Unit] =
+      previousModificationOpt match {
+        case None => Applicative[F].unit
+        case Some((previousPath, previousRoot)) =>
+          commitUncommonLeftSubtrie(currentPath, previousPath, previousRoot)
+      }
+
+    def process(actions: List[HistoryAction]): F[History[F]] = {
+      type LastModification = (KeyPath, Trie)
+      val start: (Blake2b256Hash, Option[LastModification]) = (this.root, None)
       actions
         .sortBy(_.key)(keyPathOrdering)
-        .foldLeftM(this.root) {
-          case (currentRoot, InsertAction(remainingPath, value)) =>
+        .foldLeftM(start) {
+          case ((currentRoot, previousModificationOpt), InsertAction(remainingPath, value)) =>
             for {
+              _              <- commitPreviousModification(remainingPath, previousModificationOpt)
               traverseResult <- findPath(remainingPath, currentRoot)
               (_, triePath)  = traverseResult
               elements       <- rebalanceInsert(LeafPointer(value), remainingPath, triePath)
               _              <- historyStore.put(elements)
-            } yield Trie.hash(elements.last)
+            } yield (Trie.hash(elements.last), (remainingPath, elements.last).some)
 
-          case (currentRoot, DeleteAction(remainingPath)) =>
+          case ((currentRoot, previousModificationOpt), DeleteAction(remainingPath)) =>
             for {
+              _              <- commitPreviousModification(remainingPath, previousModificationOpt)
               traverseResult <- findPath(remainingPath, currentRoot)
               (_, triePath)  = traverseResult
               elements <- triePath match {
@@ -228,15 +321,20 @@ object HistoryInstances {
                              Applicative[F].pure[List[Trie]](Nil)
                          }
               _ <- historyStore.put(elements)
-            } yield elements.lastOption.map(Trie.hash).getOrElse(currentRoot)
+            } yield (
+              elements.lastOption.map(Trie.hash).getOrElse(currentRoot),
+              elements.lastOption.map(t => (remainingPath, t))
+            )
         }
-        .flatMap { newRoot =>
-          historyStore.commit(newRoot).as(newRoot)
+        .flatMap {
+          case (newRoot, _) =>
+            historyStore.commit(newRoot).as(newRoot)
         }
         .flatMap { newRoot =>
           historyStore.clear().as(newRoot)
         }
         .map(newRoot => this.copy(root = newRoot))
+    }
 
     private[history] def findPath(
         key: KeyPath,
@@ -328,7 +426,8 @@ object HistoryInstances {
     @SuppressWarnings(Array("org.wartremover.warts.Throw"))
     def commit(key: Blake2b256Hash): F[Unit] = {
       def getValue(key: Blake2b256Hash): List[Trie] =
-        cache.get(key).toList // if a key exist in cache - we want to process it
+        cache.get(key).toList // if a key exists in cache - we want to process it
+
       def extractRefs(t: Trie): Seq[Blake2b256Hash] =
         t match {
           case pb: PointerBlock =>
