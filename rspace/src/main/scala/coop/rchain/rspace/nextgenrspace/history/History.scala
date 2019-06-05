@@ -7,7 +7,6 @@ import scodec.codecs.{discriminated, provide, uint, uint2, vectorOfN}
 import coop.rchain.rspace.internal.codecByteVector
 import coop.rchain.shared.AttemptOps._
 import History._
-import coop.rchain.rspace.nextgenrspace.history.Trie.codecSkip
 
 trait History[F[_]] {
   def process(actions: List[HistoryAction]): F[History[F]]
@@ -54,13 +53,16 @@ final case class Skip(affix: ByteVector, ptr: ValuePointer) extends NonEmptyTrie
   lazy val hash: Blake2b256Hash = Blake2b256Hash.create(encoded.toByteVector)
 }
 
-final case class PointerBlock private (toVector: Vector[TriePointer]) extends NonEmptyTrie {
-  def updated(tuples: List[(Int, TriePointer)]): PointerBlock =
-    new PointerBlock(tuples.foldLeft(toVector) { (vec, curr) =>
-      vec.updated(curr._1, curr._2)
+final case class PointerBlock private (vector: Vector[TriePointer]) extends NonEmptyTrie {
+  def update(idx: Byte, value: TriePointer): PointerBlock =
+    PointerBlock(vector.updated(toInt(idx), value))
+
+  def updated(tuples: List[(Byte, TriePointer)]): PointerBlock =
+    PointerBlock(tuples.foldLeft(vector) { (vec, curr) =>
+      vec.updated(toInt(curr._1), curr._2)
     })
 
-  def countNonEmpty: Int = toVector.count(_ != EmptyPointer)
+  def countNonEmpty: Int = vector.count(_ != EmptyPointer)
 
   lazy val encoded: BitVector = PointerBlock.codecPointerBlock.encode(this).get
 
@@ -68,7 +70,7 @@ final case class PointerBlock private (toVector: Vector[TriePointer]) extends No
 
   override def toString: String = {
     val pbs =
-      toVector.zipWithIndex.filter { case (v, _) => v != EmptyPointer }.map(_.swap).mkString(";")
+      vector.zipWithIndex.filter { case (v, _) => v != EmptyPointer }.map(_.swap).mkString(";")
     s"PB($hash: $pbs)"
   }
 }
@@ -149,10 +151,10 @@ object PointerBlock {
 
   def create(): PointerBlock = new PointerBlock(Vector.fill(length)(EmptyPointer))
 
-  def create(first: (Int, TriePointer)): PointerBlock =
+  def create(first: (Byte, TriePointer)): PointerBlock =
     PointerBlock.create().updated(List(first))
 
-  def create(first: (Int, TriePointer), second: (Int, TriePointer)): PointerBlock =
+  def create(first: (Byte, TriePointer), second: (Byte, TriePointer)): PointerBlock =
     PointerBlock.create().updated(List(first, second))
 
   // consider using zlib
@@ -162,7 +164,7 @@ object PointerBlock {
       Trie.codecTriePointer
     ).as[PointerBlock]
 
-  def unapply(arg: PointerBlock): Option[Vector[TriePointer]] = Option(arg.toVector)
+  def unapply(arg: PointerBlock): Option[Vector[TriePointer]] = Option(arg.vector)
 }
 
 final case class TriePath(nodes: Vector[Trie], conflicting: Option[Trie], edges: KeyPath) {

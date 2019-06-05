@@ -46,8 +46,8 @@ object HistoryInstances {
       val (newExistingPointer, maybeNewExistingSkip) = skip(existingTail, existingPointer)
       val (newIncomingPointer, maybeIncomingSkip)    = skip(incomingTail, incomingPointer)
       val pointerBlock = PointerBlock.create(
-        (toInt(incomingIdx), newIncomingPointer),
-        (toInt(existingIdx), newExistingPointer)
+        (incomingIdx, newIncomingPointer),
+        (existingIdx, newExistingPointer)
       )
       val pbPtr                            = NodePointer(pointerBlock.hash)
       val (topLevelPtr, maybeTopLevelSkip) = skip(prefixPath, pbPtr)
@@ -90,13 +90,13 @@ object HistoryInstances {
             newLeaf,
             existingPointer
           )
-          val updatedPointerBlock = pointerBlock.updated((toInt(common.last), dividedTopPtr) :: Nil)
+          val updatedPointerBlock = pointerBlock.update(common.last, dividedTopPtr)
           rehash(common.init, elems, updatedPointerBlock, dividedElems)
 
         case TriePath(elems :+ (pastPb: PointerBlock), None, common) => // add to existing node
           val key          = remainingPath.drop(common.size)
           val (ptr, nodes) = skip(key, newLeaf)
-          val updatedPb    = pastPb.updated((toInt(common.last), ptr) :: Nil)
+          val updatedPb    = pastPb.update(common.last, ptr)
           rehash(common.init, elems, updatedPb, nodes.toList)
 
         case TriePath(elems :+ Skip(affix, LeafPointer(_)), _, path) => // update value
@@ -122,7 +122,7 @@ object HistoryInstances {
             (remainingPrefixNodes, nextLastSeen) match {
               case (head :+ (pointerBlock: PointerBlock), other) =>
                 val ptr     = pointer(other)
-                val updated = pointerBlock.updated((toInt(remainingPath.last), ptr) :: Nil)
+                val updated = pointerBlock.update(remainingPath.last, ptr)
                 Applicative[F].pure(
                   (remainingPath.init, head, updated, currentAcc :+ nextLastSeen).asLeft
                 )
@@ -165,8 +165,8 @@ object HistoryInstances {
               case _ if pointerBlock.countNonEmpty == 2 =>
                 // pointerBlock contains 1 more element, find it, wrap in skip and re-balance
                 val (other, idx) = pointerBlock
-                  .updated((toInt(keyLast), EmptyPointer) :: Nil)
-                  .toVector
+                  .update(keyLast, EmptyPointer)
+                  .vector
                   .zipWithIndex
                   .filter(v => v._1 != EmptyPointer)
                   .head
@@ -187,7 +187,7 @@ object HistoryInstances {
                   (keyInit, init, Some(nv)).asLeft
                 }
               case _ => // pb contains 3+ elements, drop one, rehash
-                val updated = pointerBlock.updated((toInt(keyLast), EmptyPointer) :: Nil)
+                val updated = pointerBlock.update(keyLast, EmptyPointer)
                 rehash(keyInit, init, updated, Nil).map(_.asRight)
             }
 
@@ -365,7 +365,7 @@ object HistoryInstances {
           case (s: Skip, _, path) => //not a prefix
             Applicative[F].pure((EmptyPointer, path.copy(conflicting = Some(s)))).map(_.asRight)
           case (pb: PointerBlock, h :: tail, path) =>
-            pb.toVector(toInt(h)) match {
+            pb.vector(toInt(h)) match {
               case e: EmptyPointer.type =>
                 Applicative[F].pure((e, path.append(h :: Nil, pb)).asRight)
               case n: NodePointer =>
@@ -431,7 +431,7 @@ object HistoryInstances {
       def extractRefs(t: Trie): Seq[Blake2b256Hash] =
         t match {
           case pb: PointerBlock =>
-            pb.toVector.toList.filter(_ != EmptyPointer).flatMap {
+            pb.vector.toList.filter(_ != EmptyPointer).flatMap {
               case v: SkipPointer => v.hash :: Nil
               case v: NodePointer => v.hash :: Nil
               case _              => Nil
